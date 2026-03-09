@@ -1,0 +1,13 @@
+# Серверная часть
+fastapi
+uvicorn
+# Системные утилиты
+psutil
+pycaw
+comtypes
+pynput
+# Анализ текста
+pymorphy2
+# Если планируется GUI
+tkinter; python_version >= "3.0"
+qrcode

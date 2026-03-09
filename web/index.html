@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#111318" />
+    <title>Пульт ПК</title>
+
+    <link rel="icon" href="favicon.ico" sizes="any" />
+
+    <style>
+      :root {
+        --bg: #111318;
+        --card: #191c23;
+        --stroke: rgba(255, 255, 255, 0.12);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.6);
+        --ok: #34d399;
+        --bad: #fb7185;
+        --btn: rgba(255, 255, 255, 0.08);
+        --btn2: rgba(255, 255, 255, 0.12);
+        --danger: rgba(251, 113, 133, 0.16);
+        --radius: 16px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+          sans-serif;
+      }
+
+      .wrap {
+        width: min(720px, 100%);
+        margin: 0 auto;
+        padding: 16px 14px 24px;
+        padding-bottom: calc(24px + env(safe-area-inset-bottom));
+      }
+
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 6px 2px 14px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--stroke);
+        border-radius: var(--radius);
+        padding: 14px;
+      }
+
+      .card + .card {
+        margin-top: 12px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .row2 {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .label {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+
+      input[type="password"],
+      input[type="text"] {
+        width: 100%;
+        padding: 12px 12px;
+        font-size: 16px;
+        border-radius: 12px;
+        border: 1px solid var(--stroke);
+        background: rgba(0, 0, 0, 0.22);
+        color: var(--text);
+        outline: none;
+      }
+
+      input[type="password"]:focus,
+      input[type="text"]:focus {
+        border-color: rgba(255, 255, 255, 0.22);
+      }
+
+      .btn {
+        appearance: none;
+        border: 1px solid var(--stroke);
+        background: var(--btn);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 12px 12px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .btn:active {
+        background: var(--btn2);
+      }
+
+      .btn[disabled] {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .btn-danger {
+        border-color: rgba(251, 113, 133, 0.35);
+        background: var(--danger);
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .tab-btn.active {
+        background: var(--btn2);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .statusline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .statusleft {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: var(--bad);
+        flex: 0 0 auto;
+      }
+
+      .dot.ok {
+        background: var(--ok);
+      }
+
+      .statustext {
+        font-size: 14px;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .sub {
+        margin-top: 2px;
+        font-size: 12px;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .section-title {
+        margin: 0 0 10px;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .volhead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+
+      .pill {
+        font-size: 12px;
+        color: var(--muted);
+        border: 1px solid var(--stroke);
+        border-radius: 999px;
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.18);
+      }
+
+      input[type="range"] {
+        width: 100%;
+        height: 38px;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr 1.6fr 1fr;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .power-controls {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      textarea {
+        width: 100%;
+        height: 190px;
+        resize: vertical;
+        padding: 10px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--stroke);
+        background: rgba(0, 0, 0, 0.22);
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      textarea:focus {
+        outline: none;
+        border-color: rgba(255, 255, 255, 0.22);
+      }
+
+      @media (min-width: 700px) {
+        .row {
+          grid-template-columns: 1fr 180px;
+          align-items: end;
+        }
+
+        .row2 {
+          grid-template-columns: 1fr 1fr;
+          align-items: end;
+        }
+
+        header {
+          padding: 10px 2px 16px;
+        }
+      }
+
+      .toast {
+        position: fixed;
+        left: 14px;
+        right: 14px;
+        bottom: calc(14px + env(safe-area-inset-bottom));
+        padding: 12px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--stroke);
+        background: rgba(0, 0, 0, 0.55);
+        color: var(--text);
+        font-size: 13px;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: 180ms ease;
+        pointer-events: none;
+      }
+
+      .toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    </style>
+  </head>
+
+  <body>
+    <main class="wrap">
+      <header>
+        <h1>Пульт ПК</h1>
+        <div class="hint" id="apiHint"></div>
+      </header>
+
+      <section class="card" id="auth">
+        <div class="section-title">Подключение</div>
+        <div class="row">
+          <label>
+            <div class="label">Пароль</div>
+            <input
+              type="password"
+              id="password"
+              inputmode="numeric"
+              maxlength="4"
+              pattern="\\d{4}"
+              autocomplete="current-password"
+              placeholder="••••"
+            />
+          </label>
+
+          <button id="connectBtn" class="btn" type="button" onclick="connect()">
+            Подключиться
+          </button>
+        </div>
+      </section>
+
+      <section class="card" id="setup" hidden>
+        <div class="section-title">Первый запуск</div>
+        <div class="sub" style="white-space: normal">
+          QR подтвержден. Задай пароль из 4 цифр для обычного входа по IP.
+        </div>
+        <div style="height: 12px"></div>
+        <div class="row">
+          <label>
+            <div class="label">Новый пароль</div>
+            <input
+              type="text"
+              id="setupPassword"
+              inputmode="numeric"
+              maxlength="4"
+              pattern="\\d{4}"
+              autocomplete="new-password"
+              placeholder="4 цифры"
+            />
+          </label>
+
+          <button id="setupBtn" class="btn" type="button" onclick="completeSetup()">
+            Сохранить
+          </button>
+        </div>
+      </section>
+
+      <section class="card" id="setupBlocked" hidden>
+        <div class="section-title">Нужна первичная настройка</div>
+        <div class="sub" style="white-space: normal">
+          Открой QR-код на ПК и перейди по нему с телефона, чтобы задать пароль из 4 цифр.
+        </div>
+      </section>
+
+      <section class="card" id="panel" hidden>
+        <div class="statusline">
+          <div class="statusleft">
+            <span class="dot" id="statusDot" aria-hidden="true"></span>
+            <div style="min-width: 0">
+              <div class="statustext" id="statusTitle">Не подключено</div>
+              <div class="sub" id="statusSub"></div>
+            </div>
+          </div>
+
+          <button class="btn" type="button" onclick="disconnect()">
+            Отключиться
+          </button>
+        </div>
+
+        <div class="tabs">
+          <button
+            class="btn tab-btn active"
+            id="tabBtnMain"
+            type="button"
+            onclick="showTab('main')"
+          >
+            Основное
+          </button>
+          <button
+            class="btn tab-btn"
+            id="tabBtnSettings"
+            type="button"
+            onclick="showTab('settings')"
+          >
+            Настройки
+          </button>
+        </div>
+
+        <div id="tabMain">
+          <div>
+            <div class="volhead">
+              <div class="section-title" style="margin: 0">Громкость</div>
+              <div class="pill" id="volumePill">--%</div>
+            </div>
+
+            <input
+              id="volumeRange"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value="0"
+              oninput="onVolumeInput(this.value)"
+            />
+
+            <div class="controls">
+              <button class="btn" type="button" onclick="stepVolume(-5)">-5</button>
+              <button class="btn" id="muteBtn" type="button" onclick="toggleMute()">
+                Выключить звук
+              </button>
+              <button class="btn" type="button" onclick="stepVolume(5)">+5</button>
+            </div>
+          </div>
+
+          <div style="height: 12px"></div>
+
+          <div>
+            <div class="section-title">Медиа</div>
+            <div class="controls" style="grid-template-columns: 1fr 1fr 1fr">
+              <button class="btn" type="button" onclick="mediaAction('prev')">
+                Пред
+              </button>
+              <button class="btn" type="button" onclick="mediaAction('play_pause')">
+                Пауза
+              </button>
+              <button class="btn" type="button" onclick="mediaAction('next')">
+                След
+              </button>
+            </div>
+          </div>
+
+          <div style="height: 12px"></div>
+
+          <div>
+            <div class="section-title">Система</div>
+            <div class="stats">
+              <div class="pill" id="cpuPill">CPU: --%</div>
+              <div class="pill" id="ramPill">RAM: --%</div>
+            </div>
+            <div class="sub" id="uptimeText">Uptime: --</div>
+          </div>
+
+          <div style="height: 12px"></div>
+
+          <div>
+            <div class="section-title">Питание</div>
+            <div class="power-controls">
+              <button class="btn" type="button" onclick="rebootPc()">
+                Перезагрузить ПК
+              </button>
+              <button class="btn btn-danger" type="button" onclick="shutdownPc()">
+                Выключить ПК
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="tabSettings" hidden>
+          <div>
+            <div class="section-title">Логи</div>
+            <textarea id="logsBox" readonly></textarea>
+            <div class="controls" style="grid-template-columns: 1fr">
+              <button class="btn" type="button" onclick="fetchLogs(true)">
+                Обновить логи
+              </button>
+            </div>
+          </div>
+
+          <div style="height: 12px"></div>
+
+          <div>
+            <div class="section-title">Пароль</div>
+            <div class="row2">
+              <label>
+                <div class="label">Текущий пароль</div>
+                <input
+                  type="password"
+                  id="currentPassword"
+                  autocomplete="current-password"
+                  inputmode="numeric"
+                  maxlength="4"
+                  pattern="\\d{4}"
+                  placeholder="••••"
+                />
+              </label>
+              <label>
+                <div class="label">Новый пароль</div>
+                <input
+                  type="text"
+                  id="newPassword"
+                  autocomplete="new-password"
+                  inputmode="numeric"
+                  maxlength="4"
+                  pattern="\\d{4}"
+                  placeholder="4 цифры"
+                />
+              </label>
+            </div>
+            <div
+              class="controls"
+              style="grid-template-columns: 1fr; margin-top: 10px"
+            >
+              <button class="btn" type="button" onclick="changePassword()">
+                Сменить пароль
+              </button>
+            </div>
+            <div class="sub">После смены нужно подключиться заново.</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script>
+      const host = window.location.hostname;
+      const port = 8000;
+
+      // The web UI (this page) is served from :8080, the API lives on :8000.
+      // We login once using password and then use a short-lived token.
+      let token = "";
+      let pairToken = "";
+      let currentVolume = 0;
+      let muted = false;
+      let activeTab = "main";
+      let requiresPasswordSetup = false;
+
+      let pollTimer = null;
+      let toastTimer = null;
+
+      let volumeDebounce = null;
+      let volumeReqId = 0;
+      let queuedVolumeSteps = 0;
+      let volumeStepBusy = false;
+
+      function $(id) {
+        return document.getElementById(id);
+      }
+
+      function apiUrl(path) {
+        return `http://${host}:${port}${path}`;
+      }
+
+      function toast(msg) {
+        const el = $("toast");
+        el.textContent = msg;
+        el.classList.add("show");
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+      }
+
+      function setDot(ok) {
+        $("statusDot").classList.toggle("ok", !!ok);
+      }
+
+      function showEntryCard(name) {
+        $("auth").hidden = name !== "auth";
+        $("setup").hidden = name !== "setup";
+        $("setupBlocked").hidden = name !== "setupBlocked";
+      }
+
+      async function fetchAuthState() {
+        const res = await fetch(apiUrl("/auth_state"));
+        if (!res.ok) throw new Error();
+        return res.json();
+      }
+
+      function updateVolumeUI(opts = {}) {
+        const syncRange = opts.syncRange !== false;
+        $("volumePill").textContent = muted ? "MUTE" : `${currentVolume}%`;
+        if (syncRange) $("volumeRange").value = String(currentVolume);
+        $("muteBtn").textContent = muted ? "Включить звук" : "Выключить звук";
+      }
+
+      function showTab(name) {
+        activeTab = name;
+        const isMain = name === "main";
+        $("tabMain").hidden = !isMain;
+        $("tabSettings").hidden = isMain;
+        $("tabBtnMain").classList.toggle("active", isMain);
+        $("tabBtnSettings").classList.toggle("active", !isMain);
+        if (!isMain) fetchLogs(true);
+      }
+
+      async function apiPost(path, body) {
+        const payload = { ...(body || {}) };
+        if (token) payload.token = token;
+        return fetch(apiUrl(path), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      async function notifyQrOpened(pairToken) {
+        try {
+          await fetch(apiUrl("/pair_touch"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: pairToken }),
+          });
+        } catch {
+          // ignore
+        }
+      }
+
+      async function notifyQrCompleted(pairToken) {
+        if (!pairToken) return;
+        try {
+          await fetch(apiUrl("/pair_complete"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: pairToken }),
+          });
+        } catch {
+          // ignore
+        }
+      }
+
+      function startPolling() {
+        stopPolling();
+        pollTimer = setInterval(() => {
+          fetchStatus();
+          fetchStats();
+          fetchLogs(false);
+        }, 4000);
+      }
+
+      function stopPolling() {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = null;
+      }
+
+      async function connect() {
+        const btn = $("connectBtn");
+        const password = $("password").value.trim();
+        if (!password) return toast("Enter password");
+
+        btn.disabled = true;
+        try {
+          const loginRes = await apiPost("/login", { password });
+          if (loginRes.status === 409) {
+            requiresPasswordSetup = true;
+            showEntryCard("setupBlocked");
+            toast("Complete setup via QR first");
+            return;
+          }
+          if (loginRes.status === 403) {
+            toast("Invalid password");
+            return;
+          }
+          if (!loginRes.ok) throw new Error();
+
+          const loginData = await loginRes.json();
+          token = String(loginData.token || "");
+          pairToken = "";
+          if (!token) throw new Error();
+
+          const res = await apiPost("/connect", {});
+          if (!res.ok) throw new Error();
+
+          $("auth").hidden = true;
+          $("panel").hidden = false;
+          showTab("main");
+          $("statusTitle").textContent = "Connected";
+          $("statusSub").textContent = `API: http://${host}:${port}`;
+          setDot(true);
+
+          await fetchStatus();
+          await fetchStats();
+          await fetchLogs(true);
+          startPolling();
+
+          $("password").value = "";
+        } catch {
+          toast("Connection error");
+          setDot(false);
+        } finally {
+          btn.disabled = false;
+        }
+      }
+      async function connectWithToken(options = {}) {
+        if (!token) return;
+        const completePair = options.completePair !== false;
+        try {
+          const res = await apiPost("/connect", {});
+          if (res.status === 409) {
+            requiresPasswordSetup = true;
+            showEntryCard(pairToken ? "setup" : "setupBlocked");
+            return;
+          }
+          if (!res.ok) throw new Error();
+
+          if (completePair && pairToken) {
+            await notifyQrCompleted(pairToken);
+            pairToken = "";
+          }
+
+          showEntryCard("");
+          $("panel").hidden = false;
+          showTab("main");
+          $("statusTitle").textContent = "Connected";
+          $("statusSub").textContent = `API: http://${host}:${port}`;
+          setDot(true);
+
+          await fetchStatus();
+          await fetchStats();
+          await fetchLogs(true);
+          startPolling();
+        } catch {
+          token = "";
+          resetUi();
+        }
+      }
+      async function completeSetup() {
+        const btn = $("setupBtn");
+        const new_password = $("setupPassword").value.trim();
+        if (!/^\d{4}$/.test(new_password)) {
+          toast("Password must be 4 digits");
+          return;
+        }
+        if (!token) {
+          toast("Open QR again");
+          return;
+        }
+
+        btn.disabled = true;
+        try {
+          const res = await fetch(apiUrl("/setup_password"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, new_password }),
+          });
+          if (res.status === 403) {
+            toast("QR token expired, open a new one");
+            showEntryCard("setupBlocked");
+            token = "";
+            pairToken = "";
+            return;
+          }
+          if (res.status === 400) {
+            toast("Password must be 4 digits");
+            return;
+          }
+          if (!res.ok) throw new Error();
+
+          const data = await res.json();
+          token = String(data.token || "");
+          pairToken = "";
+          requiresPasswordSetup = false;
+          $("setupPassword").value = "";
+          await connectWithToken({ completePair: false });
+        } catch {
+          toast("Setup error");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+      function resetUi() {
+        $("panel").hidden = true;
+        showEntryCard(requiresPasswordSetup ? (pairToken ? "setup" : "setupBlocked") : "auth");
+        showTab("main");
+        $("statusTitle").textContent = "Not connected";
+        $("statusSub").textContent = "";
+        $("cpuPill").textContent = "CPU: --%";
+        $("ramPill").textContent = "RAM: --%";
+        $("uptimeText").textContent = "Uptime: --";
+        $("logsBox").value = "";
+        $("currentPassword").value = "";
+        $("newPassword").value = "";
+        $("setupPassword").value = "";
+        setDot(false);
+      }
+      async function disconnect(skipServer = false) {
+        stopPolling();
+        try {
+          if (!skipServer && token) await apiPost("/disconnect", {});
+          if (!skipServer && token) await apiPost("/logout", {});
+        } catch {
+          // ignore
+        }
+        token = "";
+        pairToken = "";
+        resetUi();
+      }
+      async function fetchStatus() {
+        try {
+          const res = await apiPost("/status", {});
+          if (res.status === 403 || res.status === 409) {
+            toast("Сессия истекла, подключись заново");
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+
+          currentVolume = Math.round(Number(data.volume) * 100);
+          muted = !!data.muted;
+          updateVolumeUI();
+          setDot(true);
+        } catch {
+          setDot(false);
+        }
+      }
+
+      function formatUptime(sec) {
+        sec = Math.max(0, Number(sec) || 0);
+        const d = Math.floor(sec / 86400);
+        const h = Math.floor((sec % 86400) / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        if (d > 0) return `${d}д ${h}ч ${m}м`;
+        if (h > 0) return `${h}ч ${m}м`;
+        return `${m}м`;
+      }
+
+      async function fetchStats() {
+        try {
+          const res = await apiPost("/stats", {});
+          if (res.status === 403 || res.status === 409) {
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+
+          const cpu = Number(data.cpu_percent);
+          const ram = Number(data.ram_percent);
+          $("cpuPill").textContent = `CPU: ${Number.isFinite(cpu) ? Math.round(cpu) : "--"}%`;
+          $("ramPill").textContent = `RAM: ${Number.isFinite(ram) ? Math.round(ram) : "--"}%`;
+          $("uptimeText").textContent = `Uptime: ${formatUptime(data.uptime_sec)}`;
+        } catch {
+          // keep old values
+        }
+      }
+
+      async function fetchLogs(forceScrollBottom) {
+        try {
+          const box = $("logsBox");
+          const nearBottom =
+            box.scrollTop + box.clientHeight >= box.scrollHeight - 18;
+
+          const res = await apiPost("/logs", { limit: 250 });
+          if (res.status === 403 || res.status === 409) {
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          const lines = Array.isArray(data.logs) ? data.logs : [];
+
+          box.value = lines.join("\n");
+          if (forceScrollBottom || nearBottom) {
+            box.scrollTop = box.scrollHeight;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      function syncVolumeFromResponse(data, opts = {}) {
+        if (typeof data.volume === "number") {
+          currentVolume = Math.round(data.volume * 100);
+        }
+        if (typeof data.muted === "boolean") {
+          muted = data.muted;
+        }
+        updateVolumeUI(opts);
+      }
+
+      function onVolumeInput(v) {
+        queuedVolumeSteps = 0;
+        currentVolume = Math.max(0, Math.min(100, Number(v)));
+        muted = false;
+        updateVolumeUI({ syncRange: false });
+
+        if (volumeDebounce) clearTimeout(volumeDebounce);
+        volumeDebounce = setTimeout(() => {
+          setVolume(currentVolume / 100);
+        }, 120);
+      }
+
+      async function setVolume(value) {
+        const reqId = ++volumeReqId;
+        try {
+          const res = await apiPost("/volume", { value });
+          if (res.status === 403 || res.status === 409) {
+            toast("Session expired");
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          if (reqId !== volumeReqId) return;
+          syncVolumeFromResponse(data);
+        } catch {
+          toast("Could not change volume");
+        }
+      }
+
+      async function flushStepVolumeQueue() {
+        if (volumeStepBusy || queuedVolumeSteps === 0) return;
+
+        if (volumeDebounce) {
+          clearTimeout(volumeDebounce);
+          volumeDebounce = null;
+        }
+
+        volumeStepBusy = true;
+        const reqId = ++volumeReqId;
+        const direction = queuedVolumeSteps > 0 ? "up" : "down";
+        queuedVolumeSteps += direction === "up" ? -1 : 1;
+
+        try {
+          const res = await apiPost("/volume", { action: direction });
+          if (res.status === 403 || res.status === 409) {
+            queuedVolumeSteps = 0;
+            toast("Session expired");
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          if (reqId !== volumeReqId) return;
+          syncVolumeFromResponse(data);
+        } catch {
+          queuedVolumeSteps = 0;
+          toast("Could not change volume");
+        } finally {
+          volumeStepBusy = false;
+          if (queuedVolumeSteps !== 0) {
+            setTimeout(() => {
+              void flushStepVolumeQueue();
+            }, 0);
+          }
+        }
+      }
+
+      function stepVolume(delta) {
+        const direction = delta > 0 ? 1 : -1;
+        const steps = Math.max(1, Math.round(Math.abs(delta) / 5));
+        queuedVolumeSteps += direction * steps;
+        currentVolume = Math.max(0, Math.min(100, currentVolume + direction * steps * 5));
+        muted = false;
+        updateVolumeUI();
+        void flushStepVolumeQueue();
+      }
+
+      async function toggleMute() {
+        try {
+          const res = await apiPost("/mute", {});
+          if (res.status === 403 || res.status === 409) {
+            toast("Сессия истекла");
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          muted = !!data.muted;
+          updateVolumeUI();
+        } catch {
+          toast("Не удалось переключить mute");
+        }
+      }
+
+      async function mediaAction(action) {
+        try {
+          const res = await apiPost("/media", { action });
+          if (res.status === 403 || res.status === 409) {
+            toast("Сессия истекла");
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+        } catch {
+          toast("Ошибка медиа");
+        }
+      }
+
+      async function shutdownPc() {
+        if (!confirm("Точно выключить ПК?")) return;
+        try {
+          const res = await apiPost("/shutdown", {});
+          if (res.status === 403 || res.status === 409) {
+            toast("Сессия истекла");
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          toast("Команда отправлена");
+        } catch {
+          toast("Ошибка выключения");
+        }
+      }
+
+      async function rebootPc() {
+        if (!confirm("Точно перезагрузить ПК?")) return;
+        try {
+          const res = await apiPost("/reboot", {});
+          if (res.status === 403 || res.status === 409) {
+            toast("Сессия истекла");
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          toast("Команда отправлена");
+        } catch {
+          toast("Ошибка перезагрузки");
+        }
+      }
+
+      async function changePassword() {
+        const current_password = $("currentPassword").value.trim();
+        const new_password = $("newPassword").value.trim();
+
+        if (!current_password || !new_password) {
+          toast("Заполни оба поля");
+          return;
+        }
+        if (!/^\d{4}$/.test(new_password)) {
+          toast("Новый пароль: 4 цифры");
+          return;
+        }
+
+        try {
+          const res = await apiPost("/change_password", {
+            current_password,
+            new_password,
+          });
+          if (res.status === 403) {
+            toast("Неверный текущий пароль");
+            return;
+          }
+          if (!res.ok) throw new Error();
+
+          toast("Пароль изменён");
+          token = "";
+          stopPolling();
+          resetUi();
+        } catch {
+          toast("Ошибка смены пароля");
+        }
+      }
+
+      $("apiHint").textContent = `Web: http://${host}:8080`;
+
+      async function initializeApp() {
+        const tokenFromUrl = new URLSearchParams(window.location.search).get("token");
+        try {
+          const authState = await fetchAuthState();
+          requiresPasswordSetup = !!authState.requires_password_setup;
+        } catch {
+          requiresPasswordSetup = false;
+        }
+
+        if (tokenFromUrl) {
+          pairToken = String(tokenFromUrl || "");
+          token = pairToken;
+          await notifyQrOpened(pairToken);
+          if (requiresPasswordSetup) {
+            showEntryCard("setup");
+            return;
+          }
+          await connectWithToken();
+          return;
+        }
+
+        showEntryCard(requiresPasswordSetup ? "setupBlocked" : "auth");
+      }
+      initializeApp();
+
+      // Cleanup: older versions tried to register a service worker for PWA-install.
+      // We don't use it anymore, so unregister it (if it exists) to avoid stale caching.
+      try {
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.getRegistrations().then((regs) => {
+            regs.forEach((reg) => reg.unregister());
+          });
+        }
+        if ("caches" in window) {
+          caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
+        }
+      } catch {
+        // ignore
+      }
+    </script>
+  </body>
+</html>
