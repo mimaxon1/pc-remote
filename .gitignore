@@ -12,6 +12,7 @@ dist_*/
 1,0/
 
 settings.json
+PLAN.md
 *.log
 logs/
 
