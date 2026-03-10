@@ -9,6 +9,7 @@ from pystray import Icon, MenuItem, Menu
 from PIL import Image, ImageDraw, ImageTk
 import threading
 import queue
+from typing import Callable
 import json
 import urllib.request
 import urllib.error
@@ -23,7 +24,7 @@ gui_icon = None
 WEB_PORT = 8080
 API_PORT = 8000
 _tk_root = None
-_tk_queue: "queue.Queue[callable]" = queue.Queue()
+_tk_queue: queue.Queue[Callable] = queue.Queue()
 
 def add_log(message: str):
     """Append a log line for the tray "Logs" window (and print to console)."""
@@ -148,15 +149,15 @@ def _open_qr():
     win.title("QR код")
     win.resizable(False, False)
 
-    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)  # type: ignore
     qr.add_data(url)
     qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    img = img.resize((260, 260), Image.NEAREST)
+    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")  # type: ignore
+    img = img.resize((260, 260), Image.NEAREST)  # type: ignore
     tk_img = ImageTk.PhotoImage(img, master=win)
 
     label = tk.Label(win, image=tk_img)
-    label.image = tk_img
+    label.image = tk_img  # type: ignore
     label.pack(padx=12, pady=(12, 6))
 
     tk.Label(win, text=url).pack(pady=(0, 6))
@@ -174,7 +175,7 @@ def _open_qr():
             wraplength=260,
             justify="center",
         ).pack(padx=12, pady=(0, 6))
-    tk.Button(win, text="Скопировать ссылку", command=lambda: _copy_to_clipboard(win, url)).pack(pady=(0, 12))
+    tk.Button(win, text="Скопировать ссылку", command=lambda: _copy_to_clipboard(win, url)).pack(pady=(0, 12))  # type: ignore
 
     if token:
         def poll_pair_status() -> None:
@@ -202,11 +203,11 @@ def _open_settings():
 
     tk.Label(win, text="Web:").grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
     tk.Label(win, text=web_url).grid(row=0, column=1, sticky="w", padx=6, pady=(12, 4))
-    tk.Button(win, text="Скопировать", command=lambda: _copy_to_clipboard(win, web_url)).grid(row=0, column=2, padx=12, pady=(12, 4))
+    tk.Button(win, text="Скопировать", command=lambda: _copy_to_clipboard(win, web_url)).grid(row=0, column=2, padx=12, pady=(12, 4))  # type: ignore
 
     tk.Label(win, text="API:").grid(row=1, column=0, sticky="w", padx=12, pady=4)
     tk.Label(win, text=api_url).grid(row=1, column=1, sticky="w", padx=6, pady=4)
-    tk.Button(win, text="Скопировать", command=lambda: _copy_to_clipboard(win, api_url)).grid(row=1, column=2, padx=12, pady=4)
+    tk.Button(win, text="Скопировать", command=lambda: _copy_to_clipboard(win, api_url)).grid(row=1, column=2, padx=12, pady=4)  # type: ignore
 
     status_var = tk.StringVar()
 
@@ -317,4 +318,4 @@ def start_gui():
 def run():
     """Start tkinter loop + tray icon."""
     threading.Thread(target=start_gui, daemon=True).start()
-    threading.Thread(target=start_tray, daemon=False).start()
+    start_tray()

@@ -1,13 +1,15 @@
 # Серверная часть
-fastapi
-uvicorn
+fastapi==0.104.1
+uvicorn==0.24.0
 # Системные утилиты
-psutil
-pycaw
-comtypes
-pynput
-# Анализ текста
-pymorphy2
-# Если планируется GUI
-tkinter; python_version >= "3.0"
-qrcode
+psutil==5.9.6
+pycaw==20240123
+comtypes==1.2.0
+pynput==1.7.6
+# GUI dependencies (tkinter ships with the standard Windows Python build)
+qrcode==7.4.2
+pystray==0.19.5
+Pillow==10.1.0
+# Тестирование
+pytest==7.4.3
+httpx==0.25.2

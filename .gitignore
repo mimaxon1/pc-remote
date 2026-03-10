@@ -17,6 +17,11 @@ PLAN.md
 *.log
 logs/
 
+# Testing
+.pytest_cache/
+.test-auth-work/
+tmp*/
+
 .idea/
 .vscode/
 Thumbs.db

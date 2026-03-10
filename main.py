@@ -15,6 +15,7 @@ import uvicorn
 import argparse
 import ctypes
 import functools
+import logging
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from config import PASSWORD as DEFAULT_PASSWORD
@@ -33,6 +34,18 @@ import autostart
 import net_utils
 import single_instance
 
+# Setup logging
+logger = logging.getLogger("PC-Android")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(handler)
+
+# Global server references for graceful shutdown
+_api_server: Optional[uvicorn.Server] = None
+_web_server: Optional[HTTPServer] = None
+
 # -----------------------------
 # FastAPI
 # -----------------------------
@@ -46,11 +59,27 @@ except auth.SettingsError as exc:
     AUTH = None
     AUTH_INIT_ERROR = str(exc)
 
+# Allowlist CORS to localhost only (security fix)
+allowed_origins = [
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+try:
+    # Try to add local IP if available
+    local_ip = net_utils.get_local_ip()
+    allowed_origins.append(f"http://{local_ip}:8080")
+    allowed_origins.append(f"http://{local_ip}:8000")
+except Exception:
+    pass
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+    allow_credentials=True,
 )
 
 # -----------------------------
@@ -172,6 +201,15 @@ def check(token: Optional[str], password: Optional[str]) -> None:
 @app.get("/")
 def root():
     return {"status": "ok"}
+
+
+@app.get("/health")
+def health():
+    """Health check endpoint (no auth required) for load balancers and monitoring."""
+    return {
+        "status": "healthy",
+        "auth_ready": AUTH is not None and not AUTH.requires_password_setup(),
+    }
 
 
 @app.get("/auth_state")
@@ -419,10 +457,40 @@ def reboot(data: AuthModel):
     return {"status": "rebooting"}
 
 # -----------------------------
-# Веб-сервер для index.html
+# Port checking
 # -----------------------------
+def check_port_available(port: int) -> bool:
+    """Check if a port is available on the system."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex(("127.0.0.1", port))
+            return result != 0
+    except Exception:
+        return False
+
+def verify_ports_available(api_port: int = 8000, web_port: int = 8080) -> bool:
+    """Verify both API and web ports are available. Logs errors and returns False if not."""
+    errors = []
+    if not check_port_available(api_port):
+        errors.append(f"Port {api_port} (API) is already in use")
+    if not check_port_available(web_port):
+        errors.append(f"Port {web_port} (Web) is already in use")
+    
+    if errors:
+        for err in errors:
+            logger.error(err)
+            gui.add_log(f"ERROR: {err}")
+        return False
+    return True
+
+# -----------------------------
+# Веб-сервер для index.html
+# ────────────────────────────
 def run_web():
     """Serve the `web/` folder via a simple HTTP server on port 8080."""
+    global _web_server
+    
     if getattr(sys, "frozen", False):
         # PyInstaller:
         # - onefile: data is extracted to sys._MEIPASS
@@ -452,19 +520,55 @@ def run_web():
     port = 8080
 
     handler = functools.partial(SimpleHTTPRequestHandler, directory=web_dir)
-    server = HTTPServer(("0.0.0.0", port), handler)
-    print(f"Web controller available at http://{ip}:{port}")
+    _web_server = HTTPServer(("0.0.0.0", port), handler)
+    logger.info(f"Web controller available at http://{ip}:{port}")
     gui.add_log(f"Web controller: http://{ip}:{port}")
     gui.add_log(f"API: http://{ip}:8000")
 
-    server.serve_forever()
+    _web_server.serve_forever()
 
-# -----------------------------
 # Запуск API
-# -----------------------------
+# ──────────
 def run_api():
     """Run the FastAPI app via uvicorn on port 8000."""
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    global _api_server
+    logger.info("API starting on port 8000")
+    try:
+        config = uvicorn.Config(
+            app=app,
+            host="0.0.0.0",
+            port=8000,
+            log_level="info",
+        )
+        _api_server = uvicorn.Server(config)
+        _api_server.run()
+    except KeyboardInterrupt:
+        logger.info("API server interrupted")
+    except Exception:
+        logger.exception("API server error")
+    finally:
+        _api_server = None
+
+
+def shutdown_servers():
+    """Gracefully shutdown all servers."""
+    global _api_server, _web_server
+    logger.info("Shutting down servers...")
+    try:
+        if _api_server is not None:
+            _api_server.should_exit = True
+            logger.info("API server stop requested")
+    except Exception:
+        logger.exception("Error shutting down API server")
+    try:
+        if _web_server:
+            _web_server.shutdown()
+            _web_server.server_close()
+            logger.info("Web server stopped")
+    except Exception:
+        logger.exception("Error shutting down web server")
+    finally:
+        _web_server = None
 
 
 def hide_console_after_startup(delay: float = 2.0) -> None:
@@ -504,14 +608,39 @@ def handle_cli() -> bool:
     return False
 
 if __name__ == "__main__":
+    import atexit
+    
     if handle_cli():
         sys.exit(0)
     if not single_instance.acquire():
         sys.exit(0)
-    print("Ассистент запущен!")
+    
+    logger.info("Ассистент запущен!")
+    
+    # Verify ports are available before starting servers
+    if not verify_ports_available():
+        logger.error("Cannot start: required ports are in use")
+        gui.add_log("ERROR: Cannot start - ports 8000/8080 are in use")
+        sys.exit(1)
+    
+    # Register graceful shutdown
+    atexit.register(shutdown_servers)
+    
     if AUTH_INIT_ERROR:
+        logger.error(f"settings.json error: {AUTH_INIT_ERROR}")
         gui.add_log(f"settings.json error: {AUTH_INIT_ERROR}")
-    threading.Thread(target=run_api, daemon=True).start()
-    threading.Thread(target=run_web, daemon=True).start()
+    
+    api_thread = threading.Thread(target=run_api, name="API-Server", daemon=True)
+    web_thread = threading.Thread(target=run_web, name="Web-Server", daemon=True)
+    api_thread.start()
+    web_thread.start()
+    
     hide_console_after_startup()
-    gui.run()
+    try:
+        gui.run()
+    finally:
+        logger.info("Main GUI closed, initiating shutdown...")
+        shutdown_servers()
+        web_thread.join(timeout=2)
+        api_thread.join(timeout=2)
+        sys.exit(0)

@@ -23,7 +23,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 
 SETTINGS_FILENAME = "settings.json"
@@ -179,7 +179,7 @@ class TokenStore:
         self._tokens: dict[str, dict[str, float]] = {}
         self._pair_tokens: dict[str, dict[str, float | bool]] = {}
 
-    def _issue_locked(self, track_pair: bool) -> Tuple[str, int]:
+    def _issue_locked(self, track_pair: bool) -> tuple[str, int]:
         token = secrets.token_urlsafe(32)
         expires_at = time.time() + self._ttl
         self._tokens[token] = {"expires_at": expires_at}
@@ -191,11 +191,11 @@ class TokenStore:
             }
         return token, self._ttl
 
-    def issue(self) -> Tuple[str, int]:
+    def issue(self) -> tuple[str, int]:
         with self._lock:
             return self._issue_locked(track_pair=False)
 
-    def issue_pair(self) -> Tuple[str, int]:
+    def issue_pair(self) -> tuple[str, int]:
         with self._lock:
             return self._issue_locked(track_pair=True)
 
@@ -279,10 +279,10 @@ class AuthManager:
     def requires_password_setup(self) -> bool:
         return self._password_is_default
 
-    def issue_token(self) -> Tuple[str, int]:
+    def issue_token(self) -> tuple[str, int]:
         return self.tokens.issue()
 
-    def issue_pair_token(self) -> Tuple[str, int]:
+    def issue_pair_token(self) -> tuple[str, int]:
         return self.tokens.issue_pair()
 
     def verify_token(self, token: str) -> bool:
@@ -308,7 +308,7 @@ class AuthManager:
             save_password_hash(self._password_hash, is_default=False)
             self.tokens.clear()
 
-    def setup_password(self, new_password: str) -> Tuple[str, int]:
+    def setup_password(self, new_password: str) -> tuple[str, int]:
         with self._lock:
             self._password_hash = PasswordHash.from_password(new_password)
             self._password_is_default = False
