@@ -21,6 +21,7 @@ from config import PASSWORD as DEFAULT_PASSWORD
 import power, audio, apps
 import media
 import os
+import socket
 import sys
 import time
 from typing import Optional
@@ -91,6 +92,10 @@ class PairTokenModel(BaseModel):
     token: str
 
 
+class AudioDeviceChangeModel(AuthModel):
+    device_id: str
+
+
 def _auth_manager() -> auth.AuthManager:
     if AUTH is None:
         raise HTTPException(
@@ -103,6 +108,50 @@ def _auth_manager() -> auth.AuthManager:
 def _is_local_request(request: Request) -> bool:
     client = request.client.host if request.client else ""
     return client in ("127.0.0.1", "::1")
+
+
+def _battery_info() -> dict[str, object]:
+    battery = psutil.sensors_battery()
+    if battery is None:
+        return {
+            "present": False,
+            "percent": None,
+            "power_plugged": None,
+            "secs_left": None,
+        }
+    secs_left = int(battery.secsleft) if battery.secsleft is not None and battery.secsleft >= 0 else None
+    return {
+        "present": True,
+        "percent": float(battery.percent),
+        "power_plugged": bool(battery.power_plugged),
+        "secs_left": secs_left,
+    }
+
+
+def _system_info() -> dict[str, object]:
+    cpu_percent = float(psutil.cpu_percent(interval=0.2))
+    vm = psutil.virtual_memory()
+    uptime_sec = int(time.time() - psutil.boot_time())
+    current_ip = net_utils.get_local_ip()
+    interfaces = net_utils.list_active_ipv4_interfaces()
+    primary_interface = next((item for item in interfaces if item["ip"] == current_ip), None)
+    return {
+        "cpu_percent": cpu_percent,
+        "ram_percent": float(vm.percent),
+        "ram_used_mb": int(vm.used / (1024 * 1024)),
+        "ram_total_mb": int(vm.total / (1024 * 1024)),
+        "uptime_sec": uptime_sec,
+        "battery": _battery_info(),
+        "network": {
+            "hostname": socket.gethostname(),
+            "current_ip": current_ip,
+            "primary_interface": primary_interface,
+            "interfaces": interfaces,
+        },
+        "audio": {
+            "active_output_device": audio.get_default_output_device(),
+        },
+    }
 
 # -----------------------------
 # Проверка пароля
@@ -299,18 +348,48 @@ def status(data: AuthModel):
 def stats(data: AuthModel):
     """Basic system stats for the web UI (CPU/RAM/Uptime)."""
     check(data.token, data.password)
-
-    # cpu_percent returns a computed value since last call; a tiny interval gives stable results.
-    cpu_percent = float(psutil.cpu_percent(interval=0.2))
-    vm = psutil.virtual_memory()
-
-    uptime_sec = int(time.time() - psutil.boot_time())
+    info = _system_info()
     return {
-        "cpu_percent": cpu_percent,
-        "ram_percent": float(vm.percent),
-        "ram_used_mb": int(vm.used / (1024 * 1024)),
-        "ram_total_mb": int(vm.total / (1024 * 1024)),
-        "uptime_sec": uptime_sec,
+        "cpu_percent": info["cpu_percent"],
+        "ram_percent": info["ram_percent"],
+        "ram_used_mb": info["ram_used_mb"],
+        "ram_total_mb": info["ram_total_mb"],
+        "uptime_sec": info["uptime_sec"],
+    }
+
+
+@app.post("/info")
+def info(data: AuthModel):
+    """Detailed system info for the Info tab."""
+    check(data.token, data.password)
+    return _system_info()
+
+
+@app.post("/audio/devices")
+def audio_devices(data: AuthModel):
+    """Return available output devices."""
+    check(data.token, data.password)
+    return {
+        "devices": audio.list_output_devices(),
+        "active_output_device": audio.get_default_output_device(),
+    }
+
+
+@app.post("/audio/device")
+def audio_device(data: AudioDeviceChangeModel):
+    """Switch the active default output device."""
+    check(data.token, data.password)
+    try:
+        current = audio.set_default_output_device(data.device_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    gui.add_log(f"Output device: {current['name']}")
+    return {
+        "status": "ok",
+        "active_output_device": current,
+        "devices": audio.list_output_devices(),
     }
 
 

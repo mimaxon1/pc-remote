@@ -1,7 +1,7 @@
-"""System volume / mute control for Windows.
+"""System volume / output-device control for Windows.
 
-We use `pycaw` + `comtypes` to access the default audio endpoint
-(`IAudioEndpointVolume`).
+We use `pycaw` + `comtypes` to access the default audio endpoint and to switch
+the default render device.
 
 Important: COM is thread-affine. FastAPI handlers may run on different threads,
 so we initialize/uninitialize COM on every call.
@@ -14,7 +14,13 @@ from typing import Callable, TypeVar
 
 import comtypes
 from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+from pycaw.pycaw import (
+    AudioUtilities,
+    DEVICE_STATE,
+    EDataFlow,
+    ERole,
+    IAudioEndpointVolume,
+)
 
 T = TypeVar("T")
 
@@ -57,6 +63,88 @@ def _with_endpoint(action: Callable[[object], T], default: T) -> T:
                 comtypes.CoUninitialize()
             except Exception:
                 pass
+
+
+def _with_com(action: Callable[[], T], default: T) -> T:
+    initialized = False
+    try:
+        comtypes.CoInitialize()
+        initialized = True
+        return action()
+    except Exception as exc:
+        print(f"Audio device error: {exc}")
+        return default
+    finally:
+        if initialized:
+            try:
+                comtypes.CoUninitialize()
+            except Exception:
+                pass
+
+
+def _default_output_device_info() -> dict[str, str]:
+    device = AudioUtilities.GetSpeakers()
+    return {
+        "id": str(getattr(device, "id", "") or ""),
+        "name": str(getattr(device, "FriendlyName", "") or "Unknown output"),
+    }
+
+
+def get_default_output_device() -> dict[str, str]:
+    """Return the active default render device."""
+
+    return _with_com(_default_output_device_info, default={"id": "", "name": "Unknown output"})
+
+
+def list_output_devices() -> list[dict[str, object]]:
+    """Return active render devices with the current default highlighted."""
+
+    def action() -> list[dict[str, object]]:
+        default_id = _default_output_device_info()["id"]
+        devices = AudioUtilities.GetAllDevices(
+            EDataFlow.eRender.value,
+            DEVICE_STATE.ACTIVE.value,
+        )
+        items: list[dict[str, object]] = []
+        seen_ids: set[str] = set()
+        for device in devices:
+            device_id = str(getattr(device, "id", "") or "")
+            if not device_id or device_id in seen_ids:
+                continue
+            seen_ids.add(device_id)
+            name = str(getattr(device, "FriendlyName", "") or "Unknown output")
+            items.append(
+                {
+                    "id": device_id,
+                    "name": name,
+                    "is_default": device_id == default_id,
+                }
+            )
+        items.sort(key=lambda item: (not bool(item["is_default"]), str(item["name"]).lower()))
+        return items
+
+    return _with_com(action, default=[])
+
+
+def set_default_output_device(device_id: str) -> dict[str, str]:
+    """Set the default render device for the common Windows audio roles."""
+    target_id = str(device_id or "").strip()
+    if not target_id:
+        raise ValueError("device_id is required")
+
+    roles = [ERole.eConsole, ERole.eMultimedia, ERole.eCommunications]
+
+    def action() -> dict[str, str]:
+        AudioUtilities.SetDefaultDevice(target_id, roles=roles)
+        current = _default_output_device_info()
+        if current["id"] != target_id:
+            raise RuntimeError("default output device did not switch")
+        return current
+
+    result = _with_com(action, default={"id": "", "name": ""})
+    if not result["id"]:
+        raise RuntimeError("failed to switch output device")
+    return result
 
 
 def get_volume() -> float:

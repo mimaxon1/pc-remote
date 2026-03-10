@@ -103,7 +103,8 @@
       }
 
       input[type="password"],
-      input[type="text"] {
+      input[type="text"],
+      select {
         width: 100%;
         padding: 12px 12px;
         font-size: 16px;
@@ -115,7 +116,8 @@
       }
 
       input[type="password"]:focus,
-      input[type="text"]:focus {
+      input[type="text"]:focus,
+      select:focus {
         border-color: rgba(255, 255, 255, 0.22);
       }
 
@@ -128,6 +130,15 @@
         padding: 12px 12px;
         font-size: 14px;
         font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 46px;
+        min-width: 0;
+        line-height: 1.2;
+        text-align: center;
+        white-space: normal;
+        overflow-wrap: anywhere;
         cursor: pointer;
       }
 
@@ -147,9 +158,13 @@
 
       .tabs {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 10px;
         margin-bottom: 12px;
+      }
+
+      .tab-btn {
+        padding-inline: 8px;
       }
 
       .tab-btn.active {
@@ -231,7 +246,7 @@
 
       .controls {
         display: grid;
-        grid-template-columns: 1fr 1.6fr 1fr;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr);
         gap: 10px;
         margin-top: 10px;
       }
@@ -244,9 +259,23 @@
 
       .stats {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
         margin-top: 10px;
+      }
+
+      .tabs > *,
+      .controls > *,
+      .power-controls > *,
+      .row > *,
+      .row2 > *,
+      .stats > * {
+        min-width: 0;
+      }
+
+      .info-stack {
+        display: grid;
+        gap: 10px;
       }
 
       textarea {
@@ -397,6 +426,14 @@
           </button>
           <button
             class="btn tab-btn"
+            id="tabBtnInfo"
+            type="button"
+            onclick="showTab('info')"
+          >
+            Инфо
+          </button>
+          <button
+            class="btn tab-btn"
             id="tabBtnSettings"
             type="button"
             onclick="showTab('settings')"
@@ -437,26 +474,15 @@
             <div class="section-title">Медиа</div>
             <div class="controls" style="grid-template-columns: 1fr 1fr 1fr">
               <button class="btn" type="button" onclick="mediaAction('prev')">
-                Пред
+                Пред.
               </button>
               <button class="btn" type="button" onclick="mediaAction('play_pause')">
                 Пауза
               </button>
               <button class="btn" type="button" onclick="mediaAction('next')">
-                След
+                След.
               </button>
             </div>
-          </div>
-
-          <div style="height: 12px"></div>
-
-          <div>
-            <div class="section-title">Система</div>
-            <div class="stats">
-              <div class="pill" id="cpuPill">CPU: --%</div>
-              <div class="pill" id="ramPill">RAM: --%</div>
-            </div>
-            <div class="sub" id="uptimeText">Uptime: --</div>
           </div>
 
           <div style="height: 12px"></div>
@@ -470,6 +496,53 @@
               <button class="btn btn-danger" type="button" onclick="shutdownPc()">
                 Выключить ПК
               </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="tabInfo" hidden>
+          <div class="info-stack">
+            <div>
+              <div class="section-title">Система</div>
+              <div class="stats">
+                <div class="pill" id="cpuPill">CPU: --%</div>
+                <div class="pill" id="ramPill">RAM: --%</div>
+              </div>
+              <div class="stats">
+                <div class="pill" id="uptimePill">Аптайм: --</div>
+                <div class="pill" id="batteryPill">Батарея: --</div>
+              </div>
+            </div>
+
+            <div>
+              <div class="section-title">Сеть</div>
+              <div class="stats">
+                <div class="pill" id="ipPill">IP: --</div>
+                <div class="pill" id="hostPill">Хост: --</div>
+              </div>
+              <div class="sub" id="networkPrimaryText">Основной: --</div>
+              <div class="sub" id="networkInterfacesText">Интерфейсы: --</div>
+            </div>
+
+            <div>
+              <div class="section-title">Вывод звука</div>
+              <div class="pill" id="audioOutputPill">Текущее: --</div>
+              <div style="height: 10px"></div>
+              <div class="row">
+                <label>
+                  <div class="label">Устройство</div>
+                  <select id="audioDeviceSelect"></select>
+                </label>
+                <button class="btn" type="button" onclick="setOutputDevice()">
+                  Переключить
+                </button>
+              </div>
+              <div class="controls" style="grid-template-columns: 1fr">
+                <button class="btn" type="button" onclick="fetchAudioDevices(true)">
+                  Обновить список
+                </button>
+              </div>
+              <div class="sub" id="audioDeviceStatus">Выбери устройство вывода.</div>
             </div>
           </div>
         </div>
@@ -586,7 +659,7 @@
 
       function updateVolumeUI(opts = {}) {
         const syncRange = opts.syncRange !== false;
-        $("volumePill").textContent = muted ? "MUTE" : `${currentVolume}%`;
+        $("volumePill").textContent = muted ? "Без звука" : `${currentVolume}%`;
         if (syncRange) $("volumeRange").value = String(currentVolume);
         $("muteBtn").textContent = muted ? "Включить звук" : "Выключить звук";
       }
@@ -594,11 +667,21 @@
       function showTab(name) {
         activeTab = name;
         const isMain = name === "main";
+        const isInfo = name === "info";
+        const isSettings = name === "settings";
         $("tabMain").hidden = !isMain;
-        $("tabSettings").hidden = isMain;
+        $("tabInfo").hidden = !isInfo;
+        $("tabSettings").hidden = !isSettings;
         $("tabBtnMain").classList.toggle("active", isMain);
-        $("tabBtnSettings").classList.toggle("active", !isMain);
-        if (!isMain) fetchLogs(true);
+        $("tabBtnInfo").classList.toggle("active", isInfo);
+        $("tabBtnSettings").classList.toggle("active", isSettings);
+        if (isInfo) {
+          void fetchStats();
+          void fetchAudioDevices(true);
+        }
+        if (isSettings) {
+          void fetchLogs(true);
+        }
       }
 
       async function apiPost(path, body) {
@@ -653,7 +736,7 @@
       async function connect() {
         const btn = $("connectBtn");
         const password = $("password").value.trim();
-        if (!password) return toast("Enter password");
+        if (!password) return toast("Введи пароль");
 
         btn.disabled = true;
         try {
@@ -661,11 +744,11 @@
           if (loginRes.status === 409) {
             requiresPasswordSetup = true;
             showEntryCard("setupBlocked");
-            toast("Complete setup via QR first");
+            toast("Сначала заверши настройку через QR");
             return;
           }
           if (loginRes.status === 403) {
-            toast("Invalid password");
+            toast("Неверный пароль");
             return;
           }
           if (!loginRes.ok) throw new Error();
@@ -681,7 +764,7 @@
           $("auth").hidden = true;
           $("panel").hidden = false;
           showTab("main");
-          $("statusTitle").textContent = "Connected";
+          $("statusTitle").textContent = "Подключено";
           $("statusSub").textContent = `API: http://${host}:${port}`;
           setDot(true);
 
@@ -692,7 +775,7 @@
 
           $("password").value = "";
         } catch {
-          toast("Connection error");
+          toast("Ошибка подключения");
           setDot(false);
         } finally {
           btn.disabled = false;
@@ -718,7 +801,7 @@
           showEntryCard("");
           $("panel").hidden = false;
           showTab("main");
-          $("statusTitle").textContent = "Connected";
+          $("statusTitle").textContent = "Подключено";
           $("statusSub").textContent = `API: http://${host}:${port}`;
           setDot(true);
 
@@ -735,11 +818,11 @@
         const btn = $("setupBtn");
         const new_password = $("setupPassword").value.trim();
         if (!/^\d{4}$/.test(new_password)) {
-          toast("Password must be 4 digits");
+          toast("Пароль должен быть из 4 цифр");
           return;
         }
         if (!token) {
-          toast("Open QR again");
+          toast("Открой QR заново");
           return;
         }
 
@@ -751,14 +834,14 @@
             body: JSON.stringify({ token, new_password }),
           });
           if (res.status === 403) {
-            toast("QR token expired, open a new one");
+            toast("QR-токен истёк, открой новый");
             showEntryCard("setupBlocked");
             token = "";
             pairToken = "";
             return;
           }
           if (res.status === 400) {
-            toast("Password must be 4 digits");
+            toast("Пароль должен быть из 4 цифр");
             return;
           }
           if (!res.ok) throw new Error();
@@ -770,7 +853,7 @@
           $("setupPassword").value = "";
           await connectWithToken({ completePair: false });
         } catch {
-          toast("Setup error");
+          toast("Ошибка первичной настройки");
         } finally {
           btn.disabled = false;
         }
@@ -779,17 +862,26 @@
         $("panel").hidden = true;
         showEntryCard(requiresPasswordSetup ? (pairToken ? "setup" : "setupBlocked") : "auth");
         showTab("main");
-        $("statusTitle").textContent = "Not connected";
+        $("statusTitle").textContent = "Не подключено";
         $("statusSub").textContent = "";
         $("cpuPill").textContent = "CPU: --%";
         $("ramPill").textContent = "RAM: --%";
-        $("uptimeText").textContent = "Uptime: --";
+        $("uptimePill").textContent = "Аптайм: --";
+        $("batteryPill").textContent = "Батарея: --";
+        $("ipPill").textContent = "IP: --";
+        $("hostPill").textContent = "Хост: --";
+        $("networkPrimaryText").textContent = "Основной: --";
+        $("networkInterfacesText").textContent = "Интерфейсы: --";
+        $("audioOutputPill").textContent = "Текущее: --";
+        $("audioDeviceSelect").innerHTML = "";
+        $("audioDeviceStatus").textContent = "Выбери устройство вывода.";
         $("logsBox").value = "";
         $("currentPassword").value = "";
         $("newPassword").value = "";
         $("setupPassword").value = "";
         setDot(false);
       }
+
       async function disconnect(skipServer = false) {
         stopPolling();
         try {
@@ -832,9 +924,24 @@
         return `${m}м`;
       }
 
+      function formatBattery(battery) {
+        if (!battery || !battery.present) return "Батарея: нет";
+        const percent = Number.isFinite(Number(battery.percent)) ? `${Math.round(Number(battery.percent))}%` : "--";
+        const source = battery.power_plugged ? "от сети" : "от батареи";
+        const eta = Number.isFinite(Number(battery.secs_left)) ? ` - ${formatUptime(battery.secs_left)}` : "";
+        return `Батарея: ${percent} (${source})${eta}`;
+      }
+
+      function formatInterface(item) {
+        if (!item) return "--";
+        const type = item.kind ? ` (${item.kind})` : "";
+        const speed = Number(item.speed_mbps) > 0 ? ` - ${item.speed_mbps} Mbps` : "";
+        return `${item.name}${type} - ${item.ip}${speed}`;
+      }
+
       async function fetchStats() {
         try {
-          const res = await apiPost("/stats", {});
+          const res = await apiPost("/info", {});
           if (res.status === 403 || res.status === 409) {
             await disconnect(true);
             return;
@@ -846,9 +953,90 @@
           const ram = Number(data.ram_percent);
           $("cpuPill").textContent = `CPU: ${Number.isFinite(cpu) ? Math.round(cpu) : "--"}%`;
           $("ramPill").textContent = `RAM: ${Number.isFinite(ram) ? Math.round(ram) : "--"}%`;
-          $("uptimeText").textContent = `Uptime: ${formatUptime(data.uptime_sec)}`;
+          $("uptimePill").textContent = `Аптайм: ${formatUptime(data.uptime_sec)}`;
+
+          $("batteryPill").textContent = formatBattery(data.battery);
+
+          const network = data.network || {};
+          $("ipPill").textContent = `IP: ${network.current_ip || "--"}`;
+          $("hostPill").textContent = `Хост: ${network.hostname || "--"}`;
+          $("networkPrimaryText").textContent = `Основной: ${formatInterface(network.primary_interface)}`;
+          const interfaces = Array.isArray(network.interfaces) && network.interfaces.length
+            ? network.interfaces.map(formatInterface).join(" | ")
+            : "--";
+          $("networkInterfacesText").textContent = `Интерфейсы: ${interfaces}`;
+
+          const activeOutput = ((data.audio || {}).active_output_device) || {};
+          $("audioOutputPill").textContent = `Текущее: ${activeOutput.name || "--"}`;
         } catch {
           // keep old values
+        }
+      }
+
+      function populateAudioDeviceSelect(devices, activeId, forceSelectCurrent) {
+        const select = $("audioDeviceSelect");
+        const previousValue = select.value;
+        select.innerHTML = "";
+
+        for (const device of devices) {
+          const option = document.createElement("option");
+          option.value = String(device.id || "");
+          option.textContent = device.is_default ? `${device.name} (текущее)` : device.name;
+          select.appendChild(option);
+        }
+
+        const nextValue = forceSelectCurrent ? activeId : previousValue || activeId;
+        if (nextValue) select.value = nextValue;
+      }
+
+      async function fetchAudioDevices(forceSelectCurrent = false) {
+        try {
+          const res = await apiPost("/audio/devices", {});
+          if (res.status === 403 || res.status === 409) {
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          const devices = Array.isArray(data.devices) ? data.devices : [];
+          const activeOutput = data.active_output_device || {};
+          populateAudioDeviceSelect(devices, String(activeOutput.id || ""), forceSelectCurrent);
+          $("audioOutputPill").textContent = `Текущее: ${activeOutput.name || "--"}`;
+          $("audioDeviceStatus").textContent = devices.length
+            ? `Найдено устройств вывода: ${devices.length}.`
+            : "Активные устройства вывода не найдены.";
+        } catch {
+          $("audioDeviceStatus").textContent = "Не удалось загрузить список устройств.";
+        }
+      }
+
+      async function setOutputDevice() {
+        const select = $("audioDeviceSelect");
+        const device_id = select.value;
+        if (!device_id) {
+          toast("Выбери устройство вывода");
+          return;
+        }
+
+        try {
+          const res = await apiPost("/audio/device", { device_id });
+          if (res.status === 403 || res.status === 409) {
+            toast("Сессия истекла");
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          const activeOutput = data.active_output_device || {};
+          const devices = Array.isArray(data.devices) ? data.devices : [];
+          populateAudioDeviceSelect(devices, String(activeOutput.id || ""), true);
+          $("audioOutputPill").textContent = `Текущее: ${activeOutput.name || "--"}`;
+          $("audioDeviceStatus").textContent = activeOutput.name
+            ? `Переключено на ${activeOutput.name}.`
+            : "Устройство вывода изменено.";
+        } catch {
+          $("audioDeviceStatus").textContent = "Не удалось переключить устройство.";
+          toast("Ошибка смены устройства");
         }
       }
 
@@ -903,7 +1091,7 @@
         try {
           const res = await apiPost("/volume", { value });
           if (res.status === 403 || res.status === 409) {
-            toast("Session expired");
+            toast("Сессия истекла");
             await disconnect(true);
             return;
           }
@@ -912,7 +1100,7 @@
           if (reqId !== volumeReqId) return;
           syncVolumeFromResponse(data);
         } catch {
-          toast("Could not change volume");
+          toast("Не удалось изменить громкость");
         }
       }
 
@@ -933,7 +1121,7 @@
           const res = await apiPost("/volume", { action: direction });
           if (res.status === 403 || res.status === 409) {
             queuedVolumeSteps = 0;
-            toast("Session expired");
+            toast("Сессия истекла");
             await disconnect(true);
             return;
           }
@@ -943,7 +1131,7 @@
           syncVolumeFromResponse(data);
         } catch {
           queuedVolumeSteps = 0;
-          toast("Could not change volume");
+          toast("Не удалось изменить громкость");
         } finally {
           volumeStepBusy = false;
           if (queuedVolumeSteps !== 0) {
@@ -977,7 +1165,7 @@
           muted = !!data.muted;
           updateVolumeUI();
         } catch {
-          toast("Не удалось переключить mute");
+          toast("Не удалось переключить звук");
         }
       }
 
@@ -1060,7 +1248,7 @@
         }
       }
 
-      $("apiHint").textContent = `Web: http://${host}:8080`;
+      $("apiHint").textContent = `Веб: http://${host}:8080`;
 
       async function initializeApp() {
         const tokenFromUrl = new URLSearchParams(window.location.search).get("token");

@@ -112,6 +112,50 @@ def _score_iface(name: str, ip: ipaddress.IPv4Address) -> int:
     return score
 
 
+def _interface_kind(name: str) -> str:
+    n = name.casefold()
+    if any(t in n for t in _ETH_TOKENS):
+        return "ethernet"
+    if any(t in n for t in _WIFI_TOKENS):
+        return "wifi"
+    if _is_bad_iface(name):
+        return "virtual"
+    return "other"
+
+
+def list_active_ipv4_interfaces() -> list[dict[str, object]]:
+    """Return active non-loopback IPv4 interfaces."""
+    items: list[dict[str, object]] = []
+    addrs = psutil.net_if_addrs()
+    stats = psutil.net_if_stats()
+
+    for if_name, addr_list in addrs.items():
+        st = stats.get(if_name)
+        if st and not st.isup:
+            continue
+        for addr in addr_list:
+            if addr.family != socket.AF_INET:
+                continue
+            try:
+                ip = ipaddress.IPv4Address(addr.address)
+            except Exception:
+                continue
+            if ip.is_loopback or ip.is_link_local:
+                continue
+            items.append(
+                {
+                    "name": if_name,
+                    "ip": str(ip),
+                    "speed_mbps": int(getattr(st, "speed", 0) or 0),
+                    "kind": _interface_kind(if_name),
+                    "is_virtualbox_host_only": _is_virtualbox_hostonly_ip(ip),
+                    "is_preferred_candidate": not _is_bad_iface(if_name) and not _is_virtualbox_hostonly_ip(ip),
+                }
+            )
+    items.sort(key=lambda item: (item["name"].lower(), item["ip"]))
+    return items
+
+
 def _fallback_ip() -> str:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
