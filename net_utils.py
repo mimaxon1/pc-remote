@@ -9,6 +9,7 @@ import socket
 import sys
 from pathlib import Path
 import ipaddress
+from typing import Optional
 try:
     import psutil
     _PSUTIL_AVAILABLE = True
@@ -64,7 +65,8 @@ _WIFI_TOKENS = (
     "wireless",
     "беспровод",
 )
-APP_DIR_NAME = "PC-Android"
+APP_DIR_NAME = "PC Remote"
+LEGACY_APP_DIR_NAMES = ("PC-Android",)
 
 
 def _is_bad_iface(name: str) -> bool:
@@ -77,53 +79,75 @@ def _is_virtualbox_hostonly_ip(ip: ipaddress.IPv4Address) -> bool:
     return ip in ipaddress.IPv4Network("192.168.56.0/24")
 
 
+def _appdata_base_dir() -> Optional[Path]:
+    if os.name != "nt":
+        return None
+    base = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
+    return Path(base) if base else None
+
+
 def _app_dir() -> Path:
-    if os.name == "nt":
-        base = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
-        if base:
-            return Path(base) / APP_DIR_NAME
+    base = _appdata_base_dir()
+    if base:
+        return base / APP_DIR_NAME
     xdg = os.environ.get("XDG_CONFIG_HOME")
     if xdg:
         return Path(xdg) / APP_DIR_NAME
     return Path.home() / ".config" / APP_DIR_NAME
 
 
-def _legacy_app_dir() -> Path:
+def _legacy_runtime_app_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
 
 
-def _legacy_settings_path() -> Path:
-    return _legacy_app_dir() / "settings.json"
+def _legacy_runtime_settings_path() -> Path:
+    return _legacy_runtime_app_dir() / "settings.json"
 
 
-def _migrate_legacy_settings(target: Path) -> None:
-    legacy = _legacy_settings_path()
-    if not legacy.exists():
-        return
+def _legacy_appdata_settings_paths() -> list[Path]:
+    base = _appdata_base_dir()
+    if base is None:
+        return []
+    return [base / name / "settings.json" for name in LEGACY_APP_DIR_NAMES]
+
+
+def _migrate_from_source(source: Path, target: Path) -> bool:
+    if not source.exists():
+        return False
     try:
-        if legacy.resolve() == target.resolve():
-            return
+        if source.resolve() == target.resolve():
+            return False
     except Exception:
         pass
 
     if target.exists():
         try:
-            legacy.unlink()
+            source.unlink()
         except Exception:
             pass
-        return
+        return True
 
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
-        shutil.move(str(legacy), str(target))
+        shutil.move(str(source), str(target))
+        return True
     except Exception:
         try:
-            shutil.copy2(legacy, target)
-            legacy.unlink(missing_ok=True)
+            shutil.copy2(source, target)
+            source.unlink(missing_ok=True)
+            return True
         except Exception:
-            pass
+            return False
+
+
+def _migrate_legacy_settings(target: Path) -> None:
+    candidates = _legacy_appdata_settings_paths()
+    candidates.append(_legacy_runtime_settings_path())
+    for source in candidates:
+        if _migrate_from_source(source, target):
+            break
 
 
 def _settings_path() -> Path:

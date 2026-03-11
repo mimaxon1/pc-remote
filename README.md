@@ -1,4 +1,4 @@
-# PC-Android
+# PC Remote
 
 Windows PC remote control from a phone over the local network.
 
@@ -41,20 +41,20 @@ Python build used by the tray GUI.
 py -3.13 -m venv .venv
 & .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt pyinstaller tzdata
-python -m PyInstaller PC-Android.spec --clean -y
+python -m PyInstaller PC-Remote.spec --clean -y
 ```
 
 Output:
-- `dist\PC-Android\PC-Android.exe`
+- `dist\PC Remote\PC Remote.exe`
 
 ## Run the build
 
-Run `dist\PC-Android\PC-Android.exe`. No Python is required on the target PC.
+Run `dist\PC Remote\PC Remote.exe`. No Python is required on the target PC.
 
 ## Configuration
 
-- `settings.json` is created in per-user app data (`%APPDATA%\PC-Android\settings.json` on Windows)
-- Autostart uses the current user Startup folder and writes `PC-Android.cmd`
+- `settings.json` is created in per-user app data (`%APPDATA%\PC Remote\settings.json` on Windows)
+- Autostart uses the current user Startup folder and writes `PC Remote.cmd`
 
 ## Network
 
@@ -64,4 +64,4 @@ Run `dist\PC-Android\PC-Android.exe`. No Python is required on the target PC.
 ## Troubleshooting
 
 - `ModuleNotFoundError: pystray`: install `pystray` and rebuild
-- `PermissionError` on `dist\PC-Android`: close the running app and rebuild, or use `--distpath` to a new folder
+- `PermissionError` on `dist\PC Remote`: close the running app and rebuild, or use `--distpath` to a new folder

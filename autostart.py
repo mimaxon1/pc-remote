@@ -6,8 +6,10 @@ import os
 import sys
 from pathlib import Path
 
-APP_NAME = "PC-Android"
+APP_NAME = "PC Remote"
+LEGACY_APP_NAME = "PC-Android"
 AUTOSTART_FILENAME = f"{APP_NAME}.cmd"
+LEGACY_AUTOSTART_FILENAME = f"{LEGACY_APP_NAME}.cmd"
 
 
 def _startup_dir() -> Path:
@@ -34,7 +36,34 @@ def _command_line() -> str:
 
 
 def autostart_file() -> Path:
+    _migrate_legacy_autostart()
     return _startup_dir() / AUTOSTART_FILENAME
+
+
+def _legacy_autostart_file() -> Path:
+    return _startup_dir() / LEGACY_AUTOSTART_FILENAME
+
+
+def _migrate_legacy_autostart() -> None:
+    legacy = _legacy_autostart_file()
+    target = _startup_dir() / AUTOSTART_FILENAME
+
+    if not legacy.exists() or legacy == target:
+        return
+    if target.exists():
+        try:
+            legacy.unlink()
+        except Exception:
+            pass
+        return
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        content = f'@echo off\r\nstart "" /b {_command_line()}\r\n'
+        target.write_text(content, encoding="utf-8")
+        legacy.unlink()
+    except Exception:
+        pass
 
 
 def is_enabled() -> bool:
@@ -52,7 +81,12 @@ def install() -> Path:
 
 def remove() -> bool:
     target = autostart_file()
+    legacy = _legacy_autostart_file()
+    removed = False
     if target.exists():
         target.unlink()
-        return True
-    return False
+        removed = True
+    if legacy.exists():
+        legacy.unlink()
+        removed = True
+    return removed

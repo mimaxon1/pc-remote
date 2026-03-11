@@ -9,7 +9,7 @@ import sys
 
 _mutex_handle = None
 _ERROR_ALREADY_EXISTS = 183
-_MUTEX_NAME = "Local\\PCAndroidRemoteSingleInstance"
+_MUTEX_NAME = "Local\\PCRemoteSingleInstance"
 
 
 def _show_already_running_message() -> None:
@@ -19,7 +19,7 @@ def _show_already_running_message() -> None:
         ctypes.windll.user32.MessageBoxW(
             None,
             "Приложение уже запущено и работает в трее.",
-            "PC-Android",
+            "PC Remote",
             0x00000040,
         )
     except Exception:

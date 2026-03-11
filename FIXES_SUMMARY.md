@@ -1,4 +1,4 @@
-# PC-Android Fixes Summary
+# PC Remote Fixes Summary
 
 ## Completed Tasks (March 10, 2026)
 

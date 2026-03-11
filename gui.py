@@ -334,7 +334,7 @@ def start_tray():
         MenuItem('Настройки', show_settings),
         MenuItem('Выход', quit_app)
     )
-    gui_icon = Icon("PC-Android", create_image(),
+    gui_icon = Icon("PC Remote", create_image(),
                     f"Ассистент - Телефон {'Подключен' if phone_connected else 'Отключен'}", menu)
     gui_icon.run()
 

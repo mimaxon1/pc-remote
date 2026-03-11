@@ -35,7 +35,7 @@ import net_utils
 import single_instance
 
 # Setup logging
-logger = logging.getLogger("PC-Android")
+logger = logging.getLogger("PC Remote")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     handler = logging.StreamHandler()
