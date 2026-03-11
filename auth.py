@@ -1,7 +1,7 @@
 """Authentication helpers (password hashing + session tokens).
 
 Goals:
-- Allow changing password without rebuilding the app (settings.json next to exe)
+- Allow changing password without rebuilding the app (settings.json in per-user app data)
 - Avoid sending the password with every request (login -> token -> token auth)
 
 Notes:
@@ -17,6 +17,7 @@ import hmac
 import json
 import os
 import secrets
+import shutil
 import sys
 import tempfile
 import threading
@@ -28,6 +29,7 @@ from typing import Any, Optional
 
 SETTINGS_FILENAME = "settings.json"
 SETTINGS_VERSION = 2
+APP_DIR_NAME = "PC-Android"
 
 PBKDF2_ALGO = "pbkdf2_hmac_sha256"
 PBKDF2_ITERS = 200_000
@@ -42,13 +44,58 @@ class SettingsError(RuntimeError):
 
 def app_dir() -> Path:
     """Directory where persistent settings should live."""
+    if os.name == "nt":
+        base = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
+        if base:
+            return Path(base) / APP_DIR_NAME
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg) / APP_DIR_NAME
+    return Path.home() / ".config" / APP_DIR_NAME
+
+
+def _legacy_app_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
 
 
+def _legacy_settings_path() -> Path:
+    return _legacy_app_dir() / SETTINGS_FILENAME
+
+
+def _migrate_legacy_settings(target: Path) -> None:
+    legacy = _legacy_settings_path()
+    if not legacy.exists():
+        return
+    try:
+        if legacy.resolve() == target.resolve():
+            return
+    except Exception:
+        pass
+
+    if target.exists():
+        try:
+            legacy.unlink()
+        except Exception:
+            pass
+        return
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.move(str(legacy), str(target))
+    except Exception:
+        try:
+            shutil.copy2(legacy, target)
+            legacy.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def settings_path() -> Path:
-    return app_dir() / SETTINGS_FILENAME
+    path = app_dir() / SETTINGS_FILENAME
+    _migrate_legacy_settings(path)
+    return path
 
 
 def _b64e(raw: bytes) -> str:

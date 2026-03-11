@@ -6,7 +6,7 @@ Runs:
 - Tray GUI for status/logs
 
 Auth:
-- On first run we create `settings.json` next to the exe/script (password is stored as a hash).
+- On first run we create `settings.json` in per-user app data (password is stored as a hash).
 - UI logs in once (`/login`) and uses a short-lived token for the rest of the session.
 """
 import threading
@@ -51,7 +51,7 @@ _web_server: Optional[HTTPServer] = None
 # -----------------------------
 app = FastAPI()
 
-# Password hash lives in settings.json next to the exe/script.
+# Password hash lives in per-user app data.
 AUTH: Optional[auth.AuthManager] = None
 AUTH_INIT_ERROR: Optional[str] = None
 _AUTH_INIT_ATTEMPTED = False
@@ -266,7 +266,7 @@ def logout(data: AuthModel):
 
 @app.post("/change_password")
 def change_password(request: Request, data: ChangePasswordModel):
-    """Change password (writes settings.json next to exe/script).
+    """Change password (writes settings.json in per-user app data).
 
     Requires the current password. Remote clients must also have a valid session.
     """
@@ -532,7 +532,12 @@ def run_web():
     ip = net_utils.get_local_ip()
     port = 8080
 
-    handler = functools.partial(SimpleHTTPRequestHandler, directory=web_dir)
+    class _QuietStaticHandler(SimpleHTTPRequestHandler):
+        def log_message(self, format: str, *args) -> None:  # noqa: A003
+            # In windowed builds sys.stderr can be None; suppress per-request stderr logging.
+            return
+
+    handler = functools.partial(_QuietStaticHandler, directory=web_dir)
     _web_server = HTTPServer(("0.0.0.0", port), handler)
     logger.info(f"Web controller available at http://{ip}:{port}")
     gui.add_log(f"Web controller: http://{ip}:{port}")
@@ -551,6 +556,12 @@ def run_api():
             app=app,
             host="0.0.0.0",
             port=8000,
+            loop="asyncio",
+            http="h11",
+            ws="none",
+            log_config=None,
+            access_log=False,
+            use_colors=False,
             log_level="info",
         )
         _api_server = uvicorn.Server(config)

@@ -53,7 +53,7 @@ Run `dist\PC-Android\PC-Android.exe`. No Python is required on the target PC.
 
 ## Configuration
 
-- `settings.json` is created next to the script or built `.exe`
+- `settings.json` is created in per-user app data (`%APPDATA%\PC-Android\settings.json` on Windows)
 - Autostart uses the current user Startup folder and writes `PC-Android.cmd`
 
 ## Network

@@ -525,7 +525,13 @@
                 <div class="pill" id="hostPill">Хост: --</div>
               </div>
               <div class="sub" id="networkPrimaryText">Основной: --</div>
-              <div class="sub" id="networkInterfacesText">Интерфейсы: --</div>
+              <div
+                class="sub"
+                id="networkInterfacesText"
+                style="white-space: pre-line; overflow: visible; text-overflow: clip"
+              >
+                Интерфейсы: --
+              </div>
             </div>
 
             <div>
@@ -966,9 +972,11 @@
           $("hostPill").textContent = `Хост: ${network.hostname || "--"}`;
           $("networkPrimaryText").textContent = `Основной: ${formatInterface(network.primary_interface)}`;
           const interfaces = Array.isArray(network.interfaces) && network.interfaces.length
-            ? network.interfaces.map(formatInterface).join(" | ")
+            ? network.interfaces.map((item) => `• ${formatInterface(item)}`).join("\n")
             : "--";
-          $("networkInterfacesText").textContent = `Интерфейсы: ${interfaces}`;
+          $("networkInterfacesText").textContent = interfaces === "--"
+            ? "Интерфейсы: --"
+            : `Интерфейсы:\n${interfaces}`;
 
           const activeOutput = ((data.audio || {}).active_output_device) || {};
           $("audioOutputPill").textContent = `Текущее: ${activeOutput.name || "--"}`;

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import socket
 import sys
 from pathlib import Path
@@ -62,6 +64,7 @@ _WIFI_TOKENS = (
     "wireless",
     "беспровод",
 )
+APP_DIR_NAME = "PC-Android"
 
 
 def _is_bad_iface(name: str) -> bool:
@@ -75,13 +78,58 @@ def _is_virtualbox_hostonly_ip(ip: ipaddress.IPv4Address) -> bool:
 
 
 def _app_dir() -> Path:
+    if os.name == "nt":
+        base = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
+        if base:
+            return Path(base) / APP_DIR_NAME
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg) / APP_DIR_NAME
+    return Path.home() / ".config" / APP_DIR_NAME
+
+
+def _legacy_app_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
 
 
+def _legacy_settings_path() -> Path:
+    return _legacy_app_dir() / "settings.json"
+
+
+def _migrate_legacy_settings(target: Path) -> None:
+    legacy = _legacy_settings_path()
+    if not legacy.exists():
+        return
+    try:
+        if legacy.resolve() == target.resolve():
+            return
+    except Exception:
+        pass
+
+    if target.exists():
+        try:
+            legacy.unlink()
+        except Exception:
+            pass
+        return
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.move(str(legacy), str(target))
+    except Exception:
+        try:
+            shutil.copy2(legacy, target)
+            legacy.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def _settings_path() -> Path:
-    return _app_dir() / "settings.json"
+    path = _app_dir() / "settings.json"
+    _migrate_legacy_settings(path)
+    return path
 
 
 def _load_network_settings() -> tuple[str | None, str | None]:

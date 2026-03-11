@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.0
+
+- fixed packaged (`.exe`) API startup in windowed mode by disabling uvicorn console logging config
+- fixed packaged web server responses by suppressing `SimpleHTTPRequestHandler` stderr logging
+- moved `settings.json` to per-user app data (`%APPDATA%\\PC-Android\\settings.json`) to keep release folder clean
+- added migration from legacy `settings.json` location near script/exe
+- updated network interfaces view in web UI to render one interface per line
+
 ## v1.1.0
 
 - hardened first-run auth flow around QR setup
