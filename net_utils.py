@@ -7,7 +7,12 @@ import socket
 import sys
 from pathlib import Path
 import ipaddress
-import psutil
+try:
+    import psutil
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None  # type: ignore[assignment]
+    _PSUTIL_AVAILABLE = False
 
 
 _BAD_IFACE_TOKENS = (
@@ -125,6 +130,16 @@ def _interface_kind(name: str) -> str:
 
 def list_active_ipv4_interfaces() -> list[dict[str, object]]:
     """Return active non-loopback IPv4 interfaces."""
+    if not _PSUTIL_AVAILABLE:
+        ip = _fallback_ip()
+        return [] if ip == "127.0.0.1" else [{
+            "name": "unknown",
+            "ip": ip,
+            "speed_mbps": 0,
+            "kind": "other",
+            "is_virtualbox_host_only": False,
+            "is_preferred_candidate": True,
+        }]
     items: list[dict[str, object]] = []
     addrs = psutil.net_if_addrs()
     stats = psutil.net_if_stats()
@@ -176,6 +191,9 @@ def get_local_ip() -> str:
     }
     """
     preferred_iface, preferred_ip = _load_network_settings()
+
+    if not _PSUTIL_AVAILABLE:
+        return _fallback_ip()
 
     candidates: list[tuple[str, ipaddress.IPv4Address]] = []
     addrs = psutil.net_if_addrs()

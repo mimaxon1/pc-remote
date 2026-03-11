@@ -5,8 +5,18 @@ Uses:
 - pystray for the tray icon and context menu
 """
 import tkinter as tk
-from pystray import Icon, MenuItem, Menu
-from PIL import Image, ImageDraw, ImageTk
+try:
+    from pystray import Icon, MenuItem, Menu
+    _PYSTRAY_AVAILABLE = True
+except ImportError:
+    Icon = MenuItem = Menu = None  # type: ignore[assignment]
+    _PYSTRAY_AVAILABLE = False
+try:
+    from PIL import Image, ImageDraw, ImageTk
+    _PIL_AVAILABLE = True
+except ImportError:
+    Image = ImageDraw = ImageTk = None  # type: ignore[assignment]
+    _PIL_AVAILABLE = False
 import threading
 import queue
 from typing import Callable
@@ -16,7 +26,12 @@ import urllib.error
 import urllib.parse
 import autostart
 import net_utils
-import qrcode
+try:
+    import qrcode
+    _QRCODE_AVAILABLE = True
+except ImportError:
+    qrcode = None  # type: ignore[assignment]
+    _QRCODE_AVAILABLE = False
 
 phone_connected = False
 logs = []
@@ -25,6 +40,14 @@ WEB_PORT = 8080
 API_PORT = 8000
 _tk_root = None
 _tk_queue: queue.Queue[Callable] = queue.Queue()
+
+
+def _tray_support_error() -> str | None:
+    if not _PYSTRAY_AVAILABLE:
+        return "pystray is not installed; tray UI disabled"
+    if not _PIL_AVAILABLE:
+        return "Pillow is not installed; tray UI disabled"
+    return None
 
 def add_log(message: str):
     """Append a log line for the tray "Logs" window (and print to console)."""
@@ -76,6 +99,8 @@ def show_logs(icon, item):
     _enqueue_tk(_open_logs)
 
 def create_image():
+    if not _PIL_AVAILABLE:
+        raise RuntimeError("Pillow is required for tray icon rendering")
     image = Image.new('RGB', (64, 64), color='green')
     d = ImageDraw.Draw(image)
     d.rectangle((16, 16, 48, 48), fill='lightgreen')
@@ -139,6 +164,9 @@ def _get_pair_status(token: str) -> tuple[bool, bool]:
         return False, False
 
 def _open_qr():
+    if not _PIL_AVAILABLE or not _QRCODE_AVAILABLE:
+        add_log("QR окно недоступно: установите Pillow и qrcode")
+        return
     token, requires_setup = _get_pair_payload()
     url = _web_url()
     if token:
@@ -298,6 +326,9 @@ def quit_app(icon, item):
 
 def start_tray():
     global gui_icon
+    if not _PYSTRAY_AVAILABLE:
+        add_log("pystray не установлен, tray GUI отключен")
+        return
     menu = Menu(
         MenuItem('QR код', show_qr),
         MenuItem('Настройки', show_settings),
@@ -317,5 +348,12 @@ def start_gui():
 
 def run():
     """Start tkinter loop + tray icon."""
+    support_error = _tray_support_error()
+    if support_error:
+        add_log(support_error)
+        add_log("Running without tray UI; API and web servers stay active.")
+        start_gui()
+        return
+
     threading.Thread(target=start_gui, daemon=True).start()
     start_tray()

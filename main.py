@@ -52,12 +52,22 @@ _web_server: Optional[HTTPServer] = None
 app = FastAPI()
 
 # Password hash lives in settings.json next to the exe/script.
+AUTH: Optional[auth.AuthManager] = None
 AUTH_INIT_ERROR: Optional[str] = None
-try:
-    AUTH = auth.AuthManager(default_password=DEFAULT_PASSWORD)
-except auth.SettingsError as exc:
-    AUTH = None
-    AUTH_INIT_ERROR = str(exc)
+_AUTH_INIT_ATTEMPTED = False
+
+
+def _ensure_auth_manager_initialized() -> None:
+    global AUTH, AUTH_INIT_ERROR, _AUTH_INIT_ATTEMPTED
+    if _AUTH_INIT_ATTEMPTED:
+        return
+    _AUTH_INIT_ATTEMPTED = True
+    try:
+        AUTH = auth.AuthManager(default_password=DEFAULT_PASSWORD)
+        AUTH_INIT_ERROR = None
+    except auth.SettingsError as exc:
+        AUTH = None
+        AUTH_INIT_ERROR = str(exc)
 
 # Allowlist CORS to localhost only (security fix)
 allowed_origins = [
@@ -126,6 +136,7 @@ class AudioDeviceChangeModel(AuthModel):
 
 
 def _auth_manager() -> auth.AuthManager:
+    _ensure_auth_manager_initialized()
     if AUTH is None:
         raise HTTPException(
             status_code=500,
@@ -206,6 +217,7 @@ def root():
 @app.get("/health")
 def health():
     """Health check endpoint (no auth required) for load balancers and monitoring."""
+    _ensure_auth_manager_initialized()
     return {
         "status": "healthy",
         "auth_ready": AUTH is not None and not AUTH.requires_password_setup(),
@@ -460,12 +472,13 @@ def reboot(data: AuthModel):
 # Port checking
 # -----------------------------
 def check_port_available(port: int) -> bool:
-    """Check if a port is available on the system."""
+    """Check whether we can bind the port for a server on all interfaces."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(1)
-            result = s.connect_ex(("127.0.0.1", port))
-            return result != 0
+            if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            s.bind(("0.0.0.0", port))
+            return True
     except Exception:
         return False
 
@@ -625,7 +638,8 @@ if __name__ == "__main__":
     
     # Register graceful shutdown
     atexit.register(shutdown_servers)
-    
+
+    _ensure_auth_manager_initialized()
     if AUTH_INIT_ERROR:
         logger.error(f"settings.json error: {AUTH_INIT_ERROR}")
         gui.add_log(f"settings.json error: {AUTH_INIT_ERROR}")

@@ -10,17 +10,40 @@ so we initialize/uninitialize COM on every call.
 from __future__ import annotations
 
 from ctypes import POINTER, cast
+from types import SimpleNamespace
 from typing import Callable, TypeVar
 
-import comtypes
-from comtypes import CLSCTX_ALL
-from pycaw.pycaw import (
-    AudioUtilities,
-    DEVICE_STATE,
-    EDataFlow,
-    ERole,
-    IAudioEndpointVolume,
-)
+try:
+    import comtypes
+    from comtypes import CLSCTX_ALL
+    from pycaw.pycaw import (
+        AudioUtilities,
+        DEVICE_STATE,
+        EDataFlow,
+        ERole,
+        IAudioEndpointVolume,
+    )
+    _AUDIO_BACKEND_AVAILABLE = True
+except ImportError:
+    comtypes = SimpleNamespace(  # type: ignore[assignment]
+        CoInitialize=lambda: None,
+        CoUninitialize=lambda: None,
+    )
+    CLSCTX_ALL = 0  # type: ignore[assignment]
+    AudioUtilities = SimpleNamespace(  # type: ignore[assignment]
+        GetSpeakers=lambda: None,
+        GetAllDevices=lambda *_args, **_kwargs: [],
+        SetDefaultDevice=lambda *_args, **_kwargs: None,
+    )
+    DEVICE_STATE = SimpleNamespace(ACTIVE=SimpleNamespace(value=1))  # type: ignore[assignment]
+    EDataFlow = SimpleNamespace(eRender=SimpleNamespace(value=0))  # type: ignore[assignment]
+    ERole = SimpleNamespace(  # type: ignore[assignment]
+        eConsole=object(),
+        eMultimedia=object(),
+        eCommunications=object(),
+    )
+    IAudioEndpointVolume = SimpleNamespace(_iid_=object())  # type: ignore[assignment]
+    _AUDIO_BACKEND_AVAILABLE = False
 
 T = TypeVar("T")
 
@@ -131,6 +154,8 @@ def set_default_output_device(device_id: str) -> dict[str, str]:
     target_id = str(device_id or "").strip()
     if not target_id:
         raise ValueError("device_id is required")
+    if not _AUDIO_BACKEND_AVAILABLE:
+        raise RuntimeError("audio backend is unavailable")
 
     roles = [ERole.eConsole, ERole.eMultimedia, ERole.eCommunications]
 

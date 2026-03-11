@@ -27,6 +27,15 @@ class TestPortChecking:
         result = main.check_port_available(test_port)
         # Result should be True since the socket was closed
         assert result is True
+
+    def test_check_port_available_bound_port(self):
+        """A bound port must be treated as unavailable even before listen()."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            s.bind(("127.0.0.1", 0))
+            _, test_port = s.getsockname()
+            assert main.check_port_available(test_port) is False
     
     def test_verify_ports_available_both_good(self):
         """Test verification when both ports are available (mocked)."""
