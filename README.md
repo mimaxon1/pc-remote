@@ -42,7 +42,7 @@ Python build used by the tray GUI.
 py -3.13 -m venv .venv
 & .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt pyinstaller tzdata
-python -m PyInstaller PC-Remote.spec --clean -y
+python build_release.py
 ```
 
 Output:

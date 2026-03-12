@@ -47,8 +47,9 @@ class TestAudioHelpers:
 class TestAudioDevices:
     """Test audio device functions."""
     
+    @patch("audio._ensure_audio_backend", return_value=True)
     @patch("audio._with_com")
-    def test_get_default_output_device(self, mock_with_com):
+    def test_get_default_output_device(self, mock_with_com, mock_backend):
         """Test getting default output device."""
         mock_device_info = {"id": "test_id", "name": "Test Speaker"}
         mock_with_com.return_value = mock_device_info
@@ -58,8 +59,9 @@ class TestAudioDevices:
         assert result == mock_device_info
         mock_with_com.assert_called_once()
     
+    @patch("audio._ensure_audio_backend", return_value=True)
     @patch("audio._with_com")
-    def test_list_output_devices(self, mock_with_com):
+    def test_list_output_devices(self, mock_with_com, mock_backend):
         """Test listing output devices."""
         mock_devices = [
             {"id": "dev1", "name": "Speaker 1"},
@@ -76,8 +78,9 @@ class TestAudioDevices:
 class TestAudioVolume:
     """Test volume control functions."""
     
+    @patch("audio._ensure_audio_backend", return_value=True)
     @patch("audio._with_endpoint")
-    def test_get_volume(self, mock_with_endpoint):
+    def test_get_volume(self, mock_with_endpoint, mock_backend):
         """Test getting current volume."""
         mock_with_endpoint.return_value = 0.75
         
@@ -86,8 +89,9 @@ class TestAudioVolume:
         assert result == 0.75
         mock_with_endpoint.assert_called_once()
     
+    @patch("audio._ensure_audio_backend", return_value=True)
     @patch("audio._with_endpoint")
-    def test_set_volume(self, mock_with_endpoint):
+    def test_set_volume(self, mock_with_endpoint, mock_backend):
         """Test setting volume."""
         mock_with_endpoint.return_value = None
         
@@ -95,8 +99,9 @@ class TestAudioVolume:
         
         mock_with_endpoint.assert_called_once()
     
+    @patch("audio._ensure_audio_backend", return_value=True)
     @patch("audio._with_endpoint")
-    def test_is_muted(self, mock_with_endpoint):
+    def test_is_muted(self, mock_with_endpoint, mock_backend):
         """Test checking mute status."""
         mock_with_endpoint.return_value = True
         
@@ -105,8 +110,9 @@ class TestAudioVolume:
         assert result is True
         mock_with_endpoint.assert_called_once()
     
+    @patch("audio._ensure_audio_backend", return_value=True)
     @patch("audio._with_endpoint")
-    def test_toggle_mute(self, mock_with_endpoint):
+    def test_toggle_mute(self, mock_with_endpoint, mock_backend):
         """Test toggling mute."""
         mock_with_endpoint.return_value = True
         
@@ -119,8 +125,9 @@ class TestAudioVolume:
 class TestAudioErrorHandling:
     """Test audio error handling."""
     
+    @patch("audio._ensure_audio_backend", return_value=False)
     @patch("audio._with_endpoint")
-    def test_volume_operation_with_no_device(self, mock_with_endpoint):
+    def test_volume_operation_with_no_device(self, mock_with_endpoint, mock_backend):
         """Test volume operations when no device available."""
         # Return None or default when no device
         mock_with_endpoint.return_value = 0.0
@@ -129,8 +136,9 @@ class TestAudioErrorHandling:
         
         assert isinstance(result, (float, int))
     
+    @patch("audio._ensure_audio_backend", return_value=False)
     @patch("audio._with_com")
-    def test_get_default_device_with_exception(self, mock_with_com):
+    def test_get_default_device_with_exception(self, mock_with_com, mock_backend):
         """Test device retrieval with exception."""
         # _with_com should return default value even on exception
         default_device = {"id": "", "name": "Unknown output"}
@@ -140,6 +148,11 @@ class TestAudioErrorHandling:
         # Should return default/error value
         assert "name" in result
         assert result == default_device
+
+    def test_set_default_output_device_requires_backend(self):
+        with patch("audio._ensure_audio_backend", return_value=False):
+            with pytest.raises(RuntimeError):
+                audio.set_default_output_device("device-1")
 
 
 if __name__ == "__main__":

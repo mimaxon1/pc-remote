@@ -630,6 +630,7 @@
       let muted = false;
       let activeTab = "main";
       let requiresPasswordSetup = false;
+      let logCursor = 0;
 
       let pollTimer = null;
       let toastTimer = null;
@@ -760,9 +761,13 @@
       function startPolling() {
         stopPolling();
         pollTimer = setInterval(() => {
-          fetchStatus();
-          fetchStats();
-          fetchLogs(false);
+          void fetchStatus();
+          if (activeTab === "info") {
+            void fetchStats();
+          }
+          if (activeTab === "settings") {
+            void fetchLogs(false);
+          }
         }, statusPollMs);
       }
 
@@ -920,6 +925,7 @@
         $("audioDeviceSelect").innerHTML = "";
         $("audioDeviceStatus").textContent = "Выбери устройство вывода.";
         $("logsBox").value = "";
+        logCursor = 0;
         $("currentPassword").value = "";
         $("newPassword").value = "";
         $("setupPassword").value = "";
@@ -993,6 +999,7 @@
           }
           if (!res.ok) throw new Error();
           const data = await res.json();
+          const activeOutput = ((data.audio || {}).active_output_device) || {};
 
           const cpu = Number(data.cpu_percent);
           const ram = Number(data.ram_percent);
@@ -1013,7 +1020,6 @@
             ? "Интерфейсы: --"
             : `Интерфейсы:\n${interfaces}`;
 
-          const activeOutput = ((data.audio || {}).active_output_device) || {};
           $("audioOutputPill").textContent = `Текущее: ${activeOutput.name || "--"}`;
         } catch {
           // keep old values
@@ -1093,7 +1099,12 @@
           const nearBottom =
             box.scrollTop + box.clientHeight >= box.scrollHeight - 18;
 
-          const res = await apiPost("/logs", { limit: 250 });
+          const requestBody = { limit: 120 };
+          if (!forceScrollBottom && logCursor > 0) {
+            requestBody.since = logCursor;
+          }
+
+          const res = await apiPost("/logs", requestBody);
           if (res.status === 403 || res.status === 409) {
             await disconnect(true);
             return;
@@ -1101,8 +1112,20 @@
           if (!res.ok) throw new Error();
           const data = await res.json();
           const lines = Array.isArray(data.logs) ? data.logs : [];
-
-          box.value = lines.join("\n");
+          const nextSince = Number(data.next_since);
+          const shouldReset = forceScrollBottom || !!data.reset || logCursor === 0;
+          let nextValue = box.value;
+          if (shouldReset) {
+            nextValue = lines.join("\n");
+          } else if (lines.length) {
+            nextValue = box.value ? `${box.value}\n${lines.join("\n")}` : lines.join("\n");
+          }
+          if (box.value !== nextValue) {
+            box.value = nextValue;
+          }
+          if (Number.isFinite(nextSince)) {
+            logCursor = Math.max(logCursor, nextSince);
+          }
           if (forceScrollBottom || nearBottom) {
             box.scrollTop = box.scrollHeight;
           }

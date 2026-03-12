@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import deque
+from dataclasses import dataclass
 import json
 import logging
 import queue
@@ -16,53 +18,152 @@ import autostart
 import config
 import net_utils
 
-try:
-    from pystray import Icon, Menu, MenuItem
-
-    _PYSTRAY_AVAILABLE = True
-except ImportError:
-    Icon = MenuItem = Menu = None  # type: ignore[assignment]
-    _PYSTRAY_AVAILABLE = False
-
-try:
-    from PIL import Image, ImageDraw, ImageTk
-
-    _PIL_AVAILABLE = True
-except ImportError:
-    Image = ImageDraw = ImageTk = None  # type: ignore[assignment]
-    _PIL_AVAILABLE = False
-
-try:
-    import qrcode
-
-    _QRCODE_AVAILABLE = True
-except ImportError:
-    qrcode = None  # type: ignore[assignment]
-    _QRCODE_AVAILABLE = False
+Icon = Menu = MenuItem = None  # type: ignore[assignment]
+Image = ImageDraw = ImageTk = None  # type: ignore[assignment]
+qrcode = None  # type: ignore[assignment]
+_PYSTRAY_AVAILABLE: bool | None = None
+_PIL_AVAILABLE: bool | None = None
+_QRCODE_AVAILABLE: bool | None = None
 
 logger = logging.getLogger(config.LOGGER_NAME)
 
+
+@dataclass(frozen=True)
+class LogEntry:
+    id: int
+    message: str
+
+
 phone_connected = False
-logs: list[str] = []
+logs: deque[LogEntry] = deque(maxlen=config.LOG_BUFFER_LIMIT)
 gui_icon = None
 _tk_root = None
 _tk_queue: queue.Queue[Callable[[], None]] = queue.Queue()
+_logs_lock = threading.Lock()
+_next_log_id = 0
+_pair_waiters: dict[str, threading.Event] = {}
+_pair_waiters_lock = threading.Lock()
+
+
+def _ensure_pystray() -> bool:
+    global Icon, Menu, MenuItem, _PYSTRAY_AVAILABLE
+    if _PYSTRAY_AVAILABLE is not None:
+        return _PYSTRAY_AVAILABLE
+    try:
+        from pystray import Icon as _Icon, Menu as _Menu, MenuItem as _MenuItem
+
+        Icon = _Icon
+        Menu = _Menu
+        MenuItem = _MenuItem
+        _PYSTRAY_AVAILABLE = True
+    except ImportError:
+        _PYSTRAY_AVAILABLE = False
+    return _PYSTRAY_AVAILABLE
+
+
+def _ensure_pillow() -> bool:
+    global Image, ImageDraw, ImageTk, _PIL_AVAILABLE
+    if _PIL_AVAILABLE is not None:
+        return _PIL_AVAILABLE
+    try:
+        from PIL import Image as _Image, ImageDraw as _ImageDraw, ImageTk as _ImageTk
+
+        Image = _Image
+        ImageDraw = _ImageDraw
+        ImageTk = _ImageTk
+        _PIL_AVAILABLE = True
+    except ImportError:
+        _PIL_AVAILABLE = False
+    return _PIL_AVAILABLE
+
+
+def _ensure_qrcode() -> bool:
+    global qrcode, _QRCODE_AVAILABLE
+    if _QRCODE_AVAILABLE is not None:
+        return _QRCODE_AVAILABLE
+    try:
+        import qrcode as _qrcode
+
+        qrcode = _qrcode
+        _QRCODE_AVAILABLE = True
+    except ImportError:
+        _QRCODE_AVAILABLE = False
+    return _QRCODE_AVAILABLE
 
 
 def _tray_support_error() -> str | None:
-    if not _PYSTRAY_AVAILABLE:
+    if not _ensure_pystray():
         return "pystray is not installed; tray UI disabled"
-    if not _PIL_AVAILABLE:
+    if not _ensure_pillow():
         return "Pillow is not installed; tray UI disabled"
     return None
 
 
 def add_log(message: str) -> None:
     """Append a log line for the tray "Logs" window."""
-    logs.append(message)
-    if len(logs) > config.LOG_BUFFER_LIMIT:
-        del logs[:-config.LOG_BUFFER_LIMIT]
+    global _next_log_id
+    with _logs_lock:
+        _next_log_id += 1
+        logs.append(LogEntry(id=_next_log_id, message=message))
     print(message)
+
+
+def get_logs(since: int | None, limit: int) -> tuple[list[LogEntry], int, bool]:
+    """Return log entries and whether the caller should replace local state."""
+    requested_limit = max(1, int(limit))
+    with _logs_lock:
+        entries = list(logs)
+        last_id = entries[-1].id if entries else _next_log_id
+        if since is None:
+            selected = entries[-requested_limit:]
+            next_since = selected[-1].id if selected else last_id
+            return selected, next_since, True
+        if not entries:
+            return [], since, False
+        oldest_id = entries[0].id
+        if since < oldest_id - 1:
+            selected = entries[-requested_limit:]
+            next_since = selected[-1].id if selected else last_id
+            return selected, next_since, True
+        selected = [entry for entry in entries if entry.id > since]
+        if len(selected) > requested_limit:
+            selected = selected[-requested_limit:]
+            return selected, selected[-1].id, True
+        next_since = selected[-1].id if selected else since
+        return selected, next_since, False
+
+
+def _log_messages(limit: int | None = None) -> list[str]:
+    with _logs_lock:
+        entries = list(logs)
+    if limit is not None:
+        entries = entries[-max(1, int(limit)) :]
+    return [entry.message for entry in entries]
+
+
+def register_pair_waiter(token: str) -> threading.Event | None:
+    if not token:
+        return None
+    waiter = threading.Event()
+    with _pair_waiters_lock:
+        _pair_waiters[token] = waiter
+    return waiter
+
+
+def clear_pair_waiter(token: str) -> None:
+    if not token:
+        return
+    with _pair_waiters_lock:
+        _pair_waiters.pop(token, None)
+
+
+def notify_pair_completed(token: str) -> None:
+    if not token:
+        return
+    with _pair_waiters_lock:
+        waiter = _pair_waiters.get(token)
+    if waiter is not None:
+        waiter.set()
 
 
 def set_phone_status(connected: bool) -> None:
@@ -104,7 +205,7 @@ def _open_logs() -> None:
     win.title("Логи ассистента")
     text = tk.Text(win, width=80, height=20)
     text.pack()
-    for line in logs:
+    for line in _log_messages():
         text.insert(tk.END, line + "\n")
 
 
@@ -113,7 +214,7 @@ def show_logs(icon, item) -> None:
 
 
 def create_image():
-    if not _PIL_AVAILABLE:
+    if not _ensure_pillow():
         raise RuntimeError("Pillow is required for tray icon rendering")
     image = Image.new("RGB", (64, 64), color="green")
     d = ImageDraw.Draw(image)
@@ -176,21 +277,8 @@ def _get_pair_payload() -> tuple[str | None, bool]:
         return None, False
 
 
-def _get_pair_status(token: str) -> tuple[bool, bool]:
-    code, body = _api_post_local("/pair_status", {"token": token})
-    if code != 200:
-        logger.warning("Failed to request QR pair status, status=%s", code)
-        return False, False
-    try:
-        data = json.loads(body)
-        return bool(data.get("opened")), bool(data.get("completed"))
-    except Exception as exc:
-        logger.warning("Failed to parse QR pair status response: %s", exc)
-        return False, False
-
-
 def _open_qr() -> None:
-    if not _PIL_AVAILABLE or not _QRCODE_AVAILABLE:
+    if not _ensure_pillow() or not _ensure_qrcode():
         add_log("QR окно недоступно: установите Pillow и qrcode")
         return
 
@@ -223,7 +311,7 @@ def _open_qr() -> None:
     label.image = tk_img  # type: ignore[attr-defined]
     label.pack(padx=12, pady=(12, 6))
 
-    tk.Label(win, text=base_url).pack(pady=(0, 6))
+    tk.Label(win, text=pair_url, wraplength=260, justify="center").pack(pady=(0, 6))
     if requires_setup:
         tk.Label(
             win,
@@ -245,16 +333,26 @@ def _open_qr() -> None:
     ).pack(pady=(0, 12))
 
     if token:
-        def poll_pair_status() -> None:
-            if not win.winfo_exists():
-                return
-            _, completed = _get_pair_status(token)
-            if completed:
-                win.destroy()
-                return
-            win.after(config.PAIR_STATUS_POLL_MS, poll_pair_status)
+        pair_waiter = register_pair_waiter(token)
 
-        win.after(config.PAIR_STATUS_POLL_MS, poll_pair_status)
+        def close_qr_window() -> None:
+            if win.winfo_exists():
+                win.destroy()
+
+        def wait_for_pair_completion() -> None:
+            if pair_waiter is None:
+                return
+            pair_waiter.wait()
+            _enqueue_tk(close_qr_window)
+
+        def on_destroy(event) -> None:
+            if event.widget is win:
+                clear_pair_waiter(token)
+                if pair_waiter is not None:
+                    pair_waiter.set()
+
+        win.bind("<Destroy>", on_destroy)
+        threading.Thread(target=wait_for_pair_completion, daemon=True).start()
 
 
 def show_qr(icon, item) -> None:
@@ -373,7 +471,7 @@ def quit_app(icon, item) -> None:
 
 def start_tray() -> None:
     global gui_icon
-    if not _PYSTRAY_AVAILABLE:
+    if not _ensure_pystray():
         add_log("pystray не установлен, tray GUI отключен")
         return
     menu = Menu(

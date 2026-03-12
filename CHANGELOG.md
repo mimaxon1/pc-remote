@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.4
+
+- fixed the QR window label to show the full pairing URL with token instead of the bare web address
+- reduced controller overhead by caching system info in the background and switching logs to incremental updates
+- lazy-loaded tray, imaging, QR, and audio backend dependencies to improve packaged app startup time
+- added a release build helper that clears persisted settings before packaging
+
 ## v1.3.3-preview
 
 - added cached system info snapshots with TTL to reduce repeated expensive reads during polling

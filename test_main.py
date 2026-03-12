@@ -227,86 +227,101 @@ class TestLoginSecurity:
 
 
 class TestSystemInfoCaching:
-    """Test system info caching to reduce expensive polling overhead."""
+    """Test split system info caches and defensive copies."""
 
     def setup_method(self):
-        main._SYSTEM_INFO_CACHE = None
+        main.stop_system_info_sampler()
+        main._SYSTEM_INFO_STATE = main.SystemInfoState()
+        main._SYSTEM_INFO_THREAD = None
+        main._SYSTEM_INFO_STOP_EVENT = main.threading.Event()
 
-    def test_system_info_uses_cached_snapshot_within_ttl(self):
+    def test_system_info_reuses_cached_sections_within_ttl(self):
         clock = FakeClock(start=10.0)
-        first_payload = {
-            "cpu_percent": 12.0,
-            "ram_percent": 30.0,
-            "ram_used_mb": 1000,
-            "ram_total_mb": 2000,
-            "uptime_sec": 123,
-            "battery": {"present": False, "percent": None, "power_plugged": None, "secs_left": None},
-            "network": {
-                "hostname": "pc",
-                "current_ip": "192.168.1.10",
-                "primary_interface": {"ip": "192.168.1.10"},
-                "interfaces": [{"ip": "192.168.1.10"}],
-            },
-            "audio": {"active_output_device": {"id": "a"}},
+        runtime = {"cpu_percent": 12.0, "ram_percent": 30.0, "ram_used_mb": 1000, "ram_total_mb": 2000}
+        battery = {"present": False, "percent": None, "power_plugged": None, "secs_left": None}
+        network = {
+            "hostname": "pc",
+            "current_ip": "192.168.1.10",
+            "primary_interface": {"ip": "192.168.1.10"},
+            "interfaces": [{"ip": "192.168.1.10"}],
         }
+        audio = {"active_output_device": {"id": "a"}}
 
-        with patch("main.time.time", side_effect=clock.now), patch("main.config.SYSTEM_INFO_CACHE_TTL_SECONDS", 5.0), patch("main._collect_system_info", return_value=first_payload) as mock_collect:
-            a = main._system_info()
-            clock.advance(1)
-            b = main._system_info()
-
-        assert mock_collect.call_count == 1
-        assert a == b
-
-    def test_system_info_refreshes_after_ttl_expires(self):
-        clock = FakeClock(start=50.0)
-        first_payload = {
-            "cpu_percent": 1.0,
-            "ram_percent": 2.0,
-            "ram_used_mb": 3,
-            "ram_total_mb": 4,
-            "uptime_sec": 5,
-            "battery": {"present": True, "percent": 10, "power_plugged": True, "secs_left": 1},
-            "network": {"hostname": "pc", "current_ip": "1.1.1.1", "primary_interface": None, "interfaces": []},
-            "audio": {"active_output_device": None},
-        }
-        second_payload = {**first_payload, "cpu_percent": 99.0}
-
-        with patch("main.time.time", side_effect=clock.now), patch("main.config.SYSTEM_INFO_CACHE_TTL_SECONDS", 2.0), patch("main._collect_system_info", side_effect=[first_payload, second_payload]) as mock_collect:
+        with patch("main.time.time", side_effect=clock.now), patch("main.config.SYSTEM_INFO_RUNTIME_TTL_SECONDS", 1.0), patch("main.config.SYSTEM_INFO_BATTERY_TTL_SECONDS", 5.0), patch("main.config.SYSTEM_INFO_NETWORK_TTL_SECONDS", 30.0), patch("main.config.SYSTEM_INFO_AUDIO_TTL_SECONDS", 10.0), patch("main._collect_runtime_info", return_value=runtime) as mock_runtime, patch("main._battery_info", return_value=battery) as mock_battery, patch("main._collect_network_info", return_value=network) as mock_network, patch("main._collect_audio_info", return_value=audio) as mock_audio:
             first = main._system_info()
-            clock.advance(3)
+            clock.advance(0.5)
             second = main._system_info()
 
-        assert mock_collect.call_count == 2
+        assert first == second
+        assert mock_runtime.call_count == 1
+        assert mock_battery.call_count == 1
+        assert mock_network.call_count == 1
+        assert mock_audio.call_count == 1
+
+    def test_system_info_refreshes_only_expired_section(self):
+        clock = FakeClock(start=50.0)
+        runtime_a = {"cpu_percent": 1.0, "ram_percent": 2.0, "ram_used_mb": 3, "ram_total_mb": 4}
+        runtime_b = {"cpu_percent": 99.0, "ram_percent": 2.0, "ram_used_mb": 3, "ram_total_mb": 4}
+        battery = {"present": True, "percent": 10, "power_plugged": True, "secs_left": 1}
+        network = {"hostname": "pc", "current_ip": "1.1.1.1", "primary_interface": None, "interfaces": []}
+        audio = {"active_output_device": {"id": "speaker-a"}}
+
+        with patch("main.time.time", side_effect=clock.now), patch("main.config.SYSTEM_INFO_RUNTIME_TTL_SECONDS", 1.0), patch("main.config.SYSTEM_INFO_BATTERY_TTL_SECONDS", 5.0), patch("main.config.SYSTEM_INFO_NETWORK_TTL_SECONDS", 30.0), patch("main.config.SYSTEM_INFO_AUDIO_TTL_SECONDS", 10.0), patch("main._collect_runtime_info", side_effect=[runtime_a, runtime_b]) as mock_runtime, patch("main._battery_info", return_value=battery) as mock_battery, patch("main._collect_network_info", return_value=network) as mock_network, patch("main._collect_audio_info", return_value=audio) as mock_audio:
+            first = main._system_info()
+            clock.advance(2)
+            second = main._system_info()
+
         assert first["cpu_percent"] == 1.0
         assert second["cpu_percent"] == 99.0
+        assert second["battery"] == battery
+        assert second["network"]["current_ip"] == "1.1.1.1"
+        assert mock_runtime.call_count == 2
+        assert mock_battery.call_count == 1
+        assert mock_network.call_count == 1
+        assert mock_audio.call_count == 1
 
     def test_system_info_returns_defensive_copy(self):
         clock = FakeClock(start=5.0)
-        payload = {
-            "cpu_percent": 12.0,
-            "ram_percent": 30.0,
-            "ram_used_mb": 1000,
-            "ram_total_mb": 2000,
-            "uptime_sec": 123,
-            "battery": {"present": False, "percent": None, "power_plugged": None, "secs_left": None},
-            "network": {
-                "hostname": "pc",
-                "current_ip": "192.168.1.10",
-                "primary_interface": {"ip": "192.168.1.10"},
-                "interfaces": [{"ip": "192.168.1.10"}],
-            },
-            "audio": {"active_output_device": {"id": "a"}},
+        runtime = {"cpu_percent": 12.0, "ram_percent": 30.0, "ram_used_mb": 1000, "ram_total_mb": 2000}
+        battery = {"present": False, "percent": None, "power_plugged": None, "secs_left": None}
+        network = {
+            "hostname": "pc",
+            "current_ip": "192.168.1.10",
+            "primary_interface": {"ip": "192.168.1.10"},
+            "interfaces": [{"ip": "192.168.1.10"}],
         }
+        audio = {"active_output_device": {"id": "a"}}
 
-        with patch("main.time.time", side_effect=clock.now), patch("main.config.SYSTEM_INFO_CACHE_TTL_SECONDS", 5.0), patch("main._collect_system_info", return_value=payload):
+        with patch("main.time.time", side_effect=clock.now), patch("main.config.SYSTEM_INFO_RUNTIME_TTL_SECONDS", 5.0), patch("main.config.SYSTEM_INFO_BATTERY_TTL_SECONDS", 5.0), patch("main.config.SYSTEM_INFO_NETWORK_TTL_SECONDS", 5.0), patch("main.config.SYSTEM_INFO_AUDIO_TTL_SECONDS", 5.0), patch("main._collect_runtime_info", return_value=runtime), patch("main._battery_info", return_value=battery), patch("main._collect_network_info", return_value=network), patch("main._collect_audio_info", return_value=audio):
             first = main._system_info()
             first["network"]["interfaces"].append({"ip": "8.8.8.8"})
-            first["audio"]["active_output_device"] = {"id": "changed"}
+            first["network"]["primary_interface"]["ip"] = "8.8.8.8"
+            first["audio"]["active_output_device"]["id"] = "changed"
             second = main._system_info()
 
         assert len(second["network"]["interfaces"]) == 1
+        assert second["network"]["primary_interface"] == {"ip": "192.168.1.10"}
         assert second["audio"]["active_output_device"] == {"id": "a"}
+
+
+class TestLogsEndpoint:
+    def test_logs_endpoint_supports_incremental_reads(self):
+        client = TestClient(main.app)
+        entries = [
+            main.gui.LogEntry(id=4, message="one"),
+            main.gui.LogEntry(id=5, message="two"),
+        ]
+
+        with patch("main.check"), patch("main.gui.get_logs", return_value=(entries, 5, False)) as mock_get_logs:
+            response = client.post("/logs", json={"token": "x" * 32, "limit": 10, "since": 3})
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "logs": ["one", "two"],
+            "next_since": 5,
+            "reset": False,
+        }
+        mock_get_logs.assert_called_once_with(3, 10)
 
 
 if __name__ == "__main__":

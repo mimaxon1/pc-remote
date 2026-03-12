@@ -139,6 +139,7 @@ class MediaModel(AuthModel):
 
 class LogsModel(AuthModel):
     limit: int = Field(default=config.DEFAULT_LOG_LIMIT, ge=1, le=config.MAX_LOG_LIMIT)
+    since: Optional[int] = Field(default=None, ge=0)
 
 
 class LoginModel(StrictModel):
@@ -284,79 +285,176 @@ def _battery_info() -> dict[str, object]:
 
 
 @dataclass
-class SystemInfoSnapshot:
-    captured_at: float
-    payload: dict[str, object]
+class SystemInfoCacheEntry:
+    value: dict[str, object] | None = None
+    captured_at: float = 0.0
 
 
-_SYSTEM_INFO_CACHE_LOCK = threading.Lock()
-_SYSTEM_INFO_CACHE: SystemInfoSnapshot | None = None
+@dataclass
+class SystemInfoState:
+    runtime: SystemInfoCacheEntry = field(default_factory=SystemInfoCacheEntry)
+    battery: SystemInfoCacheEntry = field(default_factory=SystemInfoCacheEntry)
+    network: SystemInfoCacheEntry = field(default_factory=SystemInfoCacheEntry)
+    audio: SystemInfoCacheEntry = field(default_factory=SystemInfoCacheEntry)
 
 
-def _clone_system_info_payload(payload: dict[str, object]) -> dict[str, object]:
-    """Return a shallow copy that protects top-level and nested mutable containers."""
-    network = payload.get("network", {})
-    audio_info = payload.get("audio", {})
-    battery = payload.get("battery", {})
+_SYSTEM_INFO_LOCK = threading.Lock()
+_SYSTEM_INFO_STATE = SystemInfoState()
+_SYSTEM_INFO_THREAD: threading.Thread | None = None
+_SYSTEM_INFO_STOP_EVENT = threading.Event()
+_SYSTEM_BOOT_TIME = psutil.boot_time()
+
+
+def _clone_interface_info(value: object) -> object:
+    return dict(value) if isinstance(value, dict) else value
+
+
+def _clone_system_info_payload(
+    runtime: dict[str, object] | None,
+    battery: dict[str, object] | None,
+    network: dict[str, object] | None,
+    audio_info: dict[str, object] | None,
+) -> dict[str, object]:
+    runtime_data = dict(runtime) if isinstance(runtime, dict) else {}
+    battery_data = dict(battery) if isinstance(battery, dict) else {}
+    network_data = network if isinstance(network, dict) else {}
+    audio_data = dict(audio_info) if isinstance(audio_info, dict) else {}
+    interfaces = network_data.get("interfaces", [])
     return {
-        "cpu_percent": payload.get("cpu_percent"),
-        "ram_percent": payload.get("ram_percent"),
-        "ram_used_mb": payload.get("ram_used_mb"),
-        "ram_total_mb": payload.get("ram_total_mb"),
-        "uptime_sec": payload.get("uptime_sec"),
-        "battery": dict(battery) if isinstance(battery, dict) else battery,
+        "cpu_percent": runtime_data.get("cpu_percent"),
+        "ram_percent": runtime_data.get("ram_percent"),
+        "ram_used_mb": runtime_data.get("ram_used_mb"),
+        "ram_total_mb": runtime_data.get("ram_total_mb"),
+        "uptime_sec": int(max(0.0, time.time() - _SYSTEM_BOOT_TIME)),
+        "battery": battery_data,
         "network": {
-            "hostname": network.get("hostname"),
-            "current_ip": network.get("current_ip"),
-            "primary_interface": network.get("primary_interface"),
-            "interfaces": list(network.get("interfaces", [])),
-        } if isinstance(network, dict) else network,
-        "audio": dict(audio_info) if isinstance(audio_info, dict) else audio_info,
+            "hostname": network_data.get("hostname"),
+            "current_ip": network_data.get("current_ip"),
+            "primary_interface": _clone_interface_info(network_data.get("primary_interface")),
+            "interfaces": [_clone_interface_info(item) for item in interfaces] if isinstance(interfaces, list) else [],
+        },
+        "audio": {
+            "active_output_device": _clone_interface_info(audio_data.get("active_output_device")),
+        },
     }
 
 
-def _collect_system_info() -> dict[str, object]:
-    cpu_percent = float(psutil.cpu_percent(interval=0.2))
+def _collect_runtime_info(cpu_interval: float = 0.0) -> dict[str, object]:
     vm = psutil.virtual_memory()
-    uptime_sec = int(time.time() - psutil.boot_time())
+    return {
+        "cpu_percent": float(psutil.cpu_percent(interval=cpu_interval)),
+        "ram_percent": float(vm.percent),
+        "ram_used_mb": int(vm.used / (1024 * 1024)),
+        "ram_total_mb": int(vm.total / (1024 * 1024)),
+    }
+
+
+def _collect_network_info() -> dict[str, object]:
     current_ip = net_utils.get_local_ip()
     interfaces = net_utils.list_active_ipv4_interfaces()
     primary_interface = next((item for item in interfaces if item["ip"] == current_ip), None)
     return {
-        "cpu_percent": cpu_percent,
-        "ram_percent": float(vm.percent),
-        "ram_used_mb": int(vm.used / (1024 * 1024)),
-        "ram_total_mb": int(vm.total / (1024 * 1024)),
-        "uptime_sec": uptime_sec,
-        "battery": _battery_info(),
-        "network": {
-            "hostname": socket.gethostname(),
-            "current_ip": current_ip,
-            "primary_interface": primary_interface,
-            "interfaces": interfaces,
-        },
-        "audio": {
-            "active_output_device": audio.get_default_output_device(),
-        },
+        "hostname": socket.gethostname(),
+        "current_ip": current_ip,
+        "primary_interface": primary_interface,
+        "interfaces": interfaces,
     }
 
 
-def _system_info() -> dict[str, object]:
-    global _SYSTEM_INFO_CACHE
+def _collect_audio_info() -> dict[str, object]:
+    return {
+        "active_output_device": audio.get_default_output_device(),
+    }
+
+
+def _system_info_entry_is_fresh(entry: SystemInfoCacheEntry, ttl: float, now: float) -> bool:
+    return entry.value is not None and now - entry.captured_at < ttl
+
+
+def _refresh_system_info_cache(force: bool = False, allow_blocking: bool = False) -> None:
     now = time.time()
-    ttl = max(0.0, float(config.SYSTEM_INFO_CACHE_TTL_SECONDS))
+    runtime_ttl = max(0.0, float(config.SYSTEM_INFO_RUNTIME_TTL_SECONDS))
+    battery_ttl = max(0.0, float(config.SYSTEM_INFO_BATTERY_TTL_SECONDS))
+    network_ttl = max(0.0, float(config.SYSTEM_INFO_NETWORK_TTL_SECONDS))
+    audio_ttl = max(0.0, float(config.SYSTEM_INFO_AUDIO_TTL_SECONDS))
 
-    with _SYSTEM_INFO_CACHE_LOCK:
-        cached = _SYSTEM_INFO_CACHE
-        if cached and now - cached.captured_at < ttl:
-            return _clone_system_info_payload(cached.payload)
+    with _SYSTEM_INFO_LOCK:
+        need_runtime = force or not _system_info_entry_is_fresh(_SYSTEM_INFO_STATE.runtime, runtime_ttl, now)
+        need_battery = force or not _system_info_entry_is_fresh(_SYSTEM_INFO_STATE.battery, battery_ttl, now)
+        need_network = force or not _system_info_entry_is_fresh(_SYSTEM_INFO_STATE.network, network_ttl, now)
+        need_audio = force or not _system_info_entry_is_fresh(_SYSTEM_INFO_STATE.audio, audio_ttl, now)
 
-    info = _collect_system_info()
+    updates: dict[str, dict[str, object]] = {}
+    if need_runtime:
+        try:
+            interval = 0.2 if allow_blocking else 0.0
+            updates["runtime"] = _collect_runtime_info(cpu_interval=interval)
+        except Exception as exc:
+            logger.warning("Failed to refresh runtime system info: %s", exc)
+    if need_battery:
+        try:
+            updates["battery"] = _battery_info()
+        except Exception as exc:
+            logger.warning("Failed to refresh battery info: %s", exc)
+    if need_network:
+        try:
+            updates["network"] = _collect_network_info()
+        except Exception as exc:
+            logger.warning("Failed to refresh network info: %s", exc)
+    if need_audio:
+        try:
+            updates["audio"] = _collect_audio_info()
+        except Exception as exc:
+            logger.warning("Failed to refresh audio info: %s", exc)
 
-    with _SYSTEM_INFO_CACHE_LOCK:
-        _SYSTEM_INFO_CACHE = SystemInfoSnapshot(captured_at=now, payload=info)
+    if not updates:
+        return
 
-    return _clone_system_info_payload(info)
+    captured_at = time.time()
+    with _SYSTEM_INFO_LOCK:
+        for key, value in updates.items():
+            setattr(_SYSTEM_INFO_STATE, key, SystemInfoCacheEntry(value=value, captured_at=captured_at))
+
+
+def _system_info_sampler_loop() -> None:
+    interval = max(0.2, float(config.SYSTEM_INFO_SAMPLE_INTERVAL_SECONDS))
+    while not _SYSTEM_INFO_STOP_EVENT.wait(interval):
+        _refresh_system_info_cache(force=False, allow_blocking=True)
+
+
+def start_system_info_sampler() -> None:
+    global _SYSTEM_INFO_THREAD
+    if _SYSTEM_INFO_THREAD is not None and _SYSTEM_INFO_THREAD.is_alive():
+        return
+    _SYSTEM_INFO_STOP_EVENT.clear()
+    _refresh_system_info_cache(force=True, allow_blocking=True)
+    _SYSTEM_INFO_THREAD = threading.Thread(
+        target=_system_info_sampler_loop,
+        name="SystemInfo-Sampler",
+        daemon=True,
+    )
+    _SYSTEM_INFO_THREAD.start()
+
+
+def stop_system_info_sampler() -> None:
+    global _SYSTEM_INFO_THREAD
+    _SYSTEM_INFO_STOP_EVENT.set()
+    thread = _SYSTEM_INFO_THREAD
+    if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+        thread.join(timeout=1.0)
+    _SYSTEM_INFO_THREAD = None
+
+
+def _system_info() -> dict[str, object]:
+    with _SYSTEM_INFO_LOCK:
+        runtime_missing = _SYSTEM_INFO_STATE.runtime.value is None
+    _refresh_system_info_cache(force=False, allow_blocking=runtime_missing)
+    with _SYSTEM_INFO_LOCK:
+        runtime = _SYSTEM_INFO_STATE.runtime.value
+        battery = _SYSTEM_INFO_STATE.battery.value
+        network = _SYSTEM_INFO_STATE.network.value
+        audio_info = _SYSTEM_INFO_STATE.audio.value
+    return _clone_system_info_payload(runtime, battery, network, audio_info)
 
 # -----------------------------
 # Проверка PIN
@@ -480,6 +578,7 @@ def setup_password(data: SetupPasswordModel):
 
     token, expires_in = manager.setup_password(data.new_password)
     manager.mark_pair_completed(data.token)
+    gui.notify_pair_completed(data.token)
     gui.add_log("PIN setup completed")
     return {"status": "ok", "token": token, "expires_in": expires_in}
 
@@ -510,6 +609,7 @@ def pair_complete(data: PairTokenModel):
     """Mark QR flow as completed successfully."""
     if not _auth_manager().mark_pair_completed(data.token):
         raise HTTPException(status_code=403, detail="Invalid QR token")
+    gui.notify_pair_completed(data.token)
     return {"status": "ok"}
 
 @app.post("/pair_status")
@@ -624,8 +724,12 @@ def audio_device(data: AudioDeviceChangeModel):
 def logs(data: LogsModel):
     """Return recent logs (last N lines)."""
     check(data.token, data.password)
-    items = list(gui.logs[-data.limit:])
-    return {"logs": items}
+    items, next_since, reset = gui.get_logs(data.since, data.limit)
+    return {
+        "logs": [entry.message for entry in items],
+        "next_since": next_since,
+        "reset": reset,
+    }
 
 @app.post("/shutdown")
 def shutdown(data: AuthModel):
@@ -777,6 +881,7 @@ def shutdown_servers():
     """Gracefully shutdown all servers."""
     global _api_server, _web_server
     logger.info("Shutting down servers...")
+    stop_system_info_sampler()
     try:
         if _api_server is not None:
             _api_server.should_exit = True
@@ -853,6 +958,8 @@ if __name__ == "__main__":
     if AUTH_INIT_ERROR:
         logger.error(f"settings.json error: {AUTH_INIT_ERROR}")
         gui.add_log(f"settings.json error: {AUTH_INIT_ERROR}")
+
+    start_system_info_sampler()
     
     api_thread = threading.Thread(target=run_api, name="API-Server", daemon=True)
     web_thread = threading.Thread(target=run_web, name="Web-Server", daemon=True)
