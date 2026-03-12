@@ -353,7 +353,7 @@
         <div class="section-title">Подключение</div>
         <div class="row">
           <label>
-            <div class="label">Пароль</div>
+            <div class="label">PIN</div>
             <input
               type="password"
               id="password"
@@ -374,12 +374,12 @@
       <section class="card" id="setup" hidden>
         <div class="section-title">Первый запуск</div>
         <div class="sub" style="white-space: normal">
-          QR подтвержден. Задай пароль из 4 цифр для обычного входа по IP.
+          QR подтвержден. Задай PIN из 4 цифр для обычного входа по IP.
         </div>
         <div style="height: 12px"></div>
         <div class="row">
           <label>
-            <div class="label">Новый пароль</div>
+            <div class="label">Новый PIN</div>
             <input
               type="password"
               id="setupPassword"
@@ -400,7 +400,7 @@
       <section class="card" id="setupBlocked" hidden>
         <div class="section-title">Нужна первичная настройка</div>
         <div class="sub" style="white-space: normal">
-          Открой QR-код на ПК и перейди по нему с телефона, чтобы задать пароль из 4 цифр.
+          Открой QR-код на ПК и перейди по нему с телефона, чтобы задать PIN из 4 цифр.
         </div>
       </section>
 
@@ -571,10 +571,10 @@
           <div style="height: 12px"></div>
 
           <div>
-            <div class="section-title">Пароль</div>
+            <div class="section-title">PIN</div>
             <div class="row2">
               <label>
-                <div class="label">Текущий пароль</div>
+                <div class="label">Текущий PIN</div>
                 <input
                   type="password"
                   id="currentPassword"
@@ -586,7 +586,7 @@
                 />
               </label>
               <label>
-                <div class="label">Новый пароль</div>
+                <div class="label">Новый PIN</div>
                 <input
                   type="password"
                   id="newPassword"
@@ -603,7 +603,7 @@
               style="grid-template-columns: 1fr; margin-top: 10px"
             >
               <button class="btn" type="button" onclick="changePassword()">
-                Сменить пароль
+                Сменить PIN
               </button>
             </div>
             <div class="sub">После смены нужно подключиться заново.</div>
@@ -774,7 +774,7 @@
       async function connect() {
         const btn = $("connectBtn");
         const password = $("password").value.trim();
-        if (!password) return toast("Введи пароль");
+        if (!password) return toast("Введи PIN");
 
         btn.disabled = true;
         try {
@@ -786,7 +786,7 @@
             return;
           }
           if (loginRes.status === 403) {
-            toast("Неверный пароль");
+            toast("Неверный PIN");
             return;
           }
           if (!loginRes.ok) throw new Error();
@@ -860,7 +860,7 @@
         const btn = $("setupBtn");
         const new_password = $("setupPassword").value.trim();
         if (!isValidPin(new_password)) {
-          toast("Пароль должен быть из 4 цифр");
+          toast("PIN должен быть из 4 цифр");
           return;
         }
         if (!token) {
@@ -884,7 +884,7 @@
             return;
           }
           if (res.status === 400) {
-            toast("Пароль должен быть из 4 цифр");
+            toast("PIN должен быть из 4 цифр");
             return;
           }
           if (!res.ok) throw new Error();
@@ -1271,7 +1271,7 @@
           return;
         }
         if (!isValidPin(new_password)) {
-          toast("Новый пароль: 4 цифры");
+          toast("Новый PIN: 4 цифры");
           return;
         }
 
@@ -1281,17 +1281,17 @@
             new_password,
           });
           if (res.status === 403) {
-            toast("Неверный текущий пароль");
+            toast("Неверный текущий PIN");
             return;
           }
           if (!res.ok) throw new Error();
 
-          toast("Пароль изменён");
+          toast("PIN изменён");
           token = "";
           stopPolling();
           resetUi();
         } catch {
-          toast("Ошибка смены пароля");
+          toast("Ошибка смены PIN");
         }
       }
 

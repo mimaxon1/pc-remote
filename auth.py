@@ -120,6 +120,7 @@ class PasswordHash:
     hash_b64: str
 
     def verify(self, password: str) -> bool:
+        """Verify a candidate PIN against the stored hash."""
         if self.algorithm != PBKDF2_ALGO:
             return False
         try:
@@ -134,6 +135,7 @@ class PasswordHash:
 
     @staticmethod
     def from_password(password: str, iterations: int = PBKDF2_ITERS) -> "PasswordHash":
+        """Create a stored hash for a freshly chosen PIN."""
         salt = os.urandom(SALT_BYTES)
         digest = _pbkdf2_sha256(password, salt, iterations)
         return PasswordHash(
@@ -352,6 +354,7 @@ class AuthManager:
         self._lock = threading.Lock()
 
     def verify_password(self, password: str) -> bool:
+        """Verify a PIN entered by the user."""
         if self._password_hash is None:
             return False
         return self._password_hash.verify(password)
@@ -382,6 +385,7 @@ class AuthManager:
         return self.tokens.get_pair_status(token)
 
     def change_password(self, new_password: str) -> None:
+        """Replace the current PIN and revoke existing sessions."""
         with self._lock:
             self._password_hash = PasswordHash.from_password(new_password)
             self._requires_password_setup = False
@@ -389,6 +393,7 @@ class AuthManager:
             self.tokens.clear()
 
     def setup_password(self, new_password: str) -> tuple[str, int]:
+        """Store the first PIN after QR setup and issue a fresh session."""
         with self._lock:
             self._password_hash = PasswordHash.from_password(new_password)
             self._requires_password_setup = False

@@ -2,7 +2,19 @@
 import pytest
 import socket
 from unittest.mock import patch, MagicMock
+from fastapi.testclient import TestClient
 import main
+
+
+class FakeClock:
+    def __init__(self, start: float = 0.0) -> None:
+        self.value = float(start)
+
+    def now(self) -> float:
+        return self.value
+
+    def advance(self, seconds: float) -> None:
+        self.value += float(seconds)
 
 
 class TestPortChecking:
@@ -89,7 +101,6 @@ class TestHealthEndpoint:
             mock_auth.return_value = mock_manager
             
             # Simulate calling the health endpoint
-            from fastapi.testclient import TestClient
             client = TestClient(main.app)
             
             response = client.get("/health")
@@ -143,6 +154,76 @@ class TestServerShutdown:
         with patch("main.logger"):
             # Should not raise exception
             main.shutdown_servers()
+
+
+class TestLoginSecurity:
+    """Test login endpoint audit logging and brute-force protection."""
+
+    def test_login_before_setup_logs_warning(self):
+        client = TestClient(main.app)
+        manager = MagicMock()
+        manager.requires_password_setup.return_value = True
+        limiter = main.LoginRateLimiter(now_fn=lambda: 100.0)
+
+        with patch("main._auth_manager", return_value=manager), patch("main.LOGIN_RATE_LIMITER", limiter), patch("main.logger") as mock_logger:
+            response = client.post("/login", json={"password": "1234"})
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "PIN setup is not complete yet"
+        manager.verify_password.assert_not_called()
+        mock_logger.warning.assert_called_once_with("Login attempt before setup | IP: %s", "testclient")
+        assert limiter.blocked_until("testclient") is None
+
+    def test_login_rate_limit_blocks_after_sixth_invalid_pin(self):
+        client = TestClient(main.app)
+        manager = MagicMock()
+        manager.requires_password_setup.return_value = False
+        manager.verify_password.return_value = False
+        clock = FakeClock()
+        limiter = main.LoginRateLimiter(now_fn=clock.now)
+
+        with patch("main._auth_manager", return_value=manager), patch("main.LOGIN_RATE_LIMITER", limiter), patch("main.logger") as mock_logger:
+            for _ in range(main.config.LOGIN_ATTEMPT_LIMIT):
+                response = client.post("/login", json={"password": "1234"})
+                assert response.status_code == 403
+                clock.advance(1)
+
+            blocked_response = client.post("/login", json={"password": "1234"})
+            retry_response = client.post("/login", json={"password": "1234"})
+
+        assert blocked_response.status_code == 429
+        assert retry_response.status_code == 429
+        assert blocked_response.json()["detail"] == "Too many login attempts. Try again later."
+        critical_messages = [call.args[0] for call in mock_logger.critical.call_args_list]
+        assert "Brute force protection triggered | IP: %s" in critical_messages
+        assert "Brute force login blocked | IP: %s" in critical_messages
+
+    def test_successful_login_resets_rate_limit_state(self):
+        client = TestClient(main.app)
+        manager = MagicMock()
+        manager.requires_password_setup.return_value = False
+        clock = FakeClock()
+        limiter = main.LoginRateLimiter(now_fn=clock.now)
+        responses = [False, False, True, False]
+
+        def verify_password(pin: str) -> bool:
+            return responses.pop(0)
+
+        manager.verify_password.side_effect = verify_password
+        manager.issue_token.return_value = ("token-1", 60)
+
+        with patch("main._auth_manager", return_value=manager), patch("main.LOGIN_RATE_LIMITER", limiter), patch("main.logger"):
+            first = client.post("/login", json={"password": "1234"})
+            second = client.post("/login", json={"password": "1234"})
+            success = client.post("/login", json={"password": "1234"})
+            after_reset = client.post("/login", json={"password": "1234"})
+
+        assert first.status_code == 403
+        assert second.status_code == 403
+        assert success.status_code == 200
+        assert success.json()["token"] == "token-1"
+        assert after_reset.status_code == 403
+        assert limiter.blocked_until("testclient") is None
 
 
 if __name__ == "__main__":

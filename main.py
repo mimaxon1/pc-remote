@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Callable, Literal, Optional
 from urllib.parse import urlsplit
 
 import psutil
@@ -42,7 +42,7 @@ _web_server: Optional[HTTPServer] = None
 # -----------------------------
 app = FastAPI()
 
-# Password hash lives in per-user app data.
+# PIN hash lives in per-user app data.
 AUTH: Optional[auth.AuthManager] = None
 AUTH_INIT_ERROR: Optional[str] = None
 _AUTH_INIT_ATTEMPTED = False
@@ -162,6 +162,83 @@ class AudioDeviceChangeModel(AuthModel):
     device_id: DeviceIdStr
 
 
+class LoginRateLimiter:
+    def __init__(
+        self,
+        max_attempts: int = config.LOGIN_ATTEMPT_LIMIT,
+        window_seconds: int = config.LOGIN_ATTEMPT_WINDOW_SECONDS,
+        block_seconds: int = config.LOGIN_BLOCK_SECONDS,
+        now_fn: Callable[[], float] = time.time,
+    ) -> None:
+        self._max_attempts = max(1, int(max_attempts))
+        self._window_seconds = max(1, int(window_seconds))
+        self._block_seconds = max(1, int(block_seconds))
+        self._now_fn = now_fn
+        self._lock = threading.Lock()
+        self._state: dict[str, dict[str, object]] = {}
+
+    def _prune_locked(self, client_ip: str, now: float) -> dict[str, object] | None:
+        entry = self._state.get(client_ip)
+        if entry is None:
+            return None
+
+        attempts = [
+            ts for ts in entry.get("attempts", []) if isinstance(ts, (int, float)) and now - float(ts) < self._window_seconds
+        ]
+        blocked_until = float(entry.get("blocked_until", 0.0) or 0.0)
+        if blocked_until <= now:
+            blocked_until = 0.0
+
+        if attempts or blocked_until:
+            entry["attempts"] = attempts
+            entry["blocked_until"] = blocked_until
+            return entry
+
+        self._state.pop(client_ip, None)
+        return None
+
+    def blocked_until(self, client_ip: str) -> float | None:
+        now = float(self._now_fn())
+        with self._lock:
+            entry = self._prune_locked(client_ip, now)
+            if entry is None:
+                return None
+            blocked_until = float(entry.get("blocked_until", 0.0) or 0.0)
+            return blocked_until or None
+
+    def record_failure(self, client_ip: str) -> float | None:
+        now = float(self._now_fn())
+        with self._lock:
+            entry = self._prune_locked(client_ip, now)
+            if entry is None:
+                entry = {"attempts": [], "blocked_until": 0.0}
+
+            blocked_until = float(entry.get("blocked_until", 0.0) or 0.0)
+            if blocked_until > now:
+                self._state[client_ip] = entry
+                return blocked_until
+
+            attempts = list(entry.get("attempts", []))
+            attempts.append(now)
+            entry["attempts"] = attempts
+            if len(attempts) > self._max_attempts:
+                blocked_until = now + self._block_seconds
+                entry["blocked_until"] = blocked_until
+                self._state[client_ip] = entry
+                return blocked_until
+
+            entry["blocked_until"] = 0.0
+            self._state[client_ip] = entry
+            return None
+
+    def reset(self, client_ip: str) -> None:
+        with self._lock:
+            self._state.pop(client_ip, None)
+
+
+LOGIN_RATE_LIMITER = LoginRateLimiter()
+
+
 def _auth_manager() -> auth.AuthManager:
     _ensure_auth_manager_initialized()
     if AUTH is None:
@@ -175,6 +252,12 @@ def _auth_manager() -> auth.AuthManager:
 def _is_local_request(request: Request) -> bool:
     client = request.client.host if request.client else ""
     return client in ("127.0.0.1", "::1")
+
+
+def _client_ip(request: Request) -> str:
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
 
 
 def _battery_info() -> dict[str, object]:
@@ -221,7 +304,7 @@ def _system_info() -> dict[str, object]:
     }
 
 # -----------------------------
-# Проверка пароля
+# Проверка PIN
 # -----------------------------
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -230,15 +313,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 def check(token: Optional[str], password: Optional[str]) -> None:
-    """Authorize a request using either a token or a password (legacy)."""
+    """Authorize a request using either a session token or a PIN."""
     manager = _auth_manager()
     if manager.requires_password_setup():
-        raise HTTPException(status_code=409, detail="Password setup required")
+        raise HTTPException(status_code=409, detail="PIN setup required")
     if token and manager.verify_token(token):
         return
     if password and manager.verify_password(password):
         return
-    raise HTTPException(status_code=403, detail="Invalid password or expired session")
+    raise HTTPException(status_code=403, detail="Invalid PIN or expired session")
 # -----------------------------
 # Эндпоинты
 # -----------------------------
@@ -280,13 +363,24 @@ def disconnect_phone(data: AuthModel):
 
 
 @app.post("/login")
-def login(data: LoginModel):
-    """Login with password once and get a short-lived token."""
+def login(request: Request, data: LoginModel):
+    """Login with a PIN once and get a short-lived session token."""
     manager = _auth_manager()
+    client_ip = _client_ip(request)
     if manager.requires_password_setup():
-        raise HTTPException(status_code=409, detail="Password setup is not complete yet")
+        logger.warning("Login attempt before setup | IP: %s", client_ip)
+        raise HTTPException(status_code=409, detail="PIN setup is not complete yet")
+    if LOGIN_RATE_LIMITER.blocked_until(client_ip):
+        logger.critical("Brute force login blocked | IP: %s", client_ip)
+        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
     if not manager.verify_password(data.password):
-        raise HTTPException(status_code=403, detail="Invalid password")
+        blocked_until = LOGIN_RATE_LIMITER.record_failure(client_ip)
+        logger.warning("Login failed: invalid PIN | IP: %s", client_ip)
+        if blocked_until:
+            logger.critical("Brute force protection triggered | IP: %s", client_ip)
+            raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+        raise HTTPException(status_code=403, detail="Invalid PIN")
+    LOGIN_RATE_LIMITER.reset(client_ip)
     token, expires_in = manager.issue_token()
     gui.add_log("Login: ok")
     return {"token": token, "expires_in": expires_in}
@@ -301,15 +395,15 @@ def logout(data: AuthModel):
 
 @app.post("/change_password")
 def change_password(request: Request, data: ChangePasswordModel):
-    """Change password (writes settings.json in per-user app data).
+    """Change the PIN (writes settings.json in per-user app data).
 
-    Requires the current password. Remote clients must also have a valid session.
+    Requires the current PIN. Remote clients must also have a valid session.
     """
     manager = _auth_manager()
     if manager.requires_password_setup():
         raise HTTPException(status_code=409, detail="Complete first-run setup via QR first")
     if not manager.verify_password(data.current_password):
-        raise HTTPException(status_code=403, detail="Invalid current password")
+        raise HTTPException(status_code=403, detail="Invalid current PIN")
     if data.token:
         if not manager.verify_token(data.token):
             raise HTTPException(status_code=403, detail="Invalid session")
@@ -317,21 +411,21 @@ def change_password(request: Request, data: ChangePasswordModel):
         raise HTTPException(status_code=403, detail="Active session required")
 
     manager.change_password(data.new_password)
-    gui.add_log("Password changed")
+    gui.add_log("PIN changed")
     return {"status": "ok"}
 
 @app.post("/setup_password")
 def setup_password(data: SetupPasswordModel):
-    """Complete first-run setup and issue a fresh session token."""
+    """Complete first-run PIN setup and issue a fresh session token."""
     manager = _auth_manager()
     if not manager.requires_password_setup():
-        raise HTTPException(status_code=400, detail="Password setup is already complete")
+        raise HTTPException(status_code=400, detail="PIN setup is already complete")
     if not manager.verify_token(data.token):
         raise HTTPException(status_code=403, detail="Invalid QR token")
 
     token, expires_in = manager.setup_password(data.new_password)
     manager.mark_pair_completed(data.token)
-    gui.add_log("Password setup completed")
+    gui.add_log("PIN setup completed")
     return {"status": "ok", "token": token, "expires_in": expires_in}
 
 @app.post("/pair")
