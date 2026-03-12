@@ -283,7 +283,39 @@ def _battery_info() -> dict[str, object]:
     }
 
 
-def _system_info() -> dict[str, object]:
+@dataclass
+class SystemInfoSnapshot:
+    captured_at: float
+    payload: dict[str, object]
+
+
+_SYSTEM_INFO_CACHE_LOCK = threading.Lock()
+_SYSTEM_INFO_CACHE: SystemInfoSnapshot | None = None
+
+
+def _clone_system_info_payload(payload: dict[str, object]) -> dict[str, object]:
+    """Return a shallow copy that protects top-level and nested mutable containers."""
+    network = payload.get("network", {})
+    audio_info = payload.get("audio", {})
+    battery = payload.get("battery", {})
+    return {
+        "cpu_percent": payload.get("cpu_percent"),
+        "ram_percent": payload.get("ram_percent"),
+        "ram_used_mb": payload.get("ram_used_mb"),
+        "ram_total_mb": payload.get("ram_total_mb"),
+        "uptime_sec": payload.get("uptime_sec"),
+        "battery": dict(battery) if isinstance(battery, dict) else battery,
+        "network": {
+            "hostname": network.get("hostname"),
+            "current_ip": network.get("current_ip"),
+            "primary_interface": network.get("primary_interface"),
+            "interfaces": list(network.get("interfaces", [])),
+        } if isinstance(network, dict) else network,
+        "audio": dict(audio_info) if isinstance(audio_info, dict) else audio_info,
+    }
+
+
+def _collect_system_info() -> dict[str, object]:
     cpu_percent = float(psutil.cpu_percent(interval=0.2))
     vm = psutil.virtual_memory()
     uptime_sec = int(time.time() - psutil.boot_time())
@@ -307,6 +339,24 @@ def _system_info() -> dict[str, object]:
             "active_output_device": audio.get_default_output_device(),
         },
     }
+
+
+def _system_info() -> dict[str, object]:
+    global _SYSTEM_INFO_CACHE
+    now = time.time()
+    ttl = max(0.0, float(config.SYSTEM_INFO_CACHE_TTL_SECONDS))
+
+    with _SYSTEM_INFO_CACHE_LOCK:
+        cached = _SYSTEM_INFO_CACHE
+        if cached and now - cached.captured_at < ttl:
+            return _clone_system_info_payload(cached.payload)
+
+    info = _collect_system_info()
+
+    with _SYSTEM_INFO_CACHE_LOCK:
+        _SYSTEM_INFO_CACHE = SystemInfoSnapshot(captured_at=now, payload=info)
+
+    return _clone_system_info_payload(info)
 
 # -----------------------------
 # Проверка PIN

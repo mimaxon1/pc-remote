@@ -226,5 +226,88 @@ class TestLoginSecurity:
         assert limiter.blocked_until("testclient") is None
 
 
+class TestSystemInfoCaching:
+    """Test system info caching to reduce expensive polling overhead."""
+
+    def setup_method(self):
+        main._SYSTEM_INFO_CACHE = None
+
+    def test_system_info_uses_cached_snapshot_within_ttl(self):
+        clock = FakeClock(start=10.0)
+        first_payload = {
+            "cpu_percent": 12.0,
+            "ram_percent": 30.0,
+            "ram_used_mb": 1000,
+            "ram_total_mb": 2000,
+            "uptime_sec": 123,
+            "battery": {"present": False, "percent": None, "power_plugged": None, "secs_left": None},
+            "network": {
+                "hostname": "pc",
+                "current_ip": "192.168.1.10",
+                "primary_interface": {"ip": "192.168.1.10"},
+                "interfaces": [{"ip": "192.168.1.10"}],
+            },
+            "audio": {"active_output_device": {"id": "a"}},
+        }
+
+        with patch("main.time.time", side_effect=clock.now), patch("main.config.SYSTEM_INFO_CACHE_TTL_SECONDS", 5.0), patch("main._collect_system_info", return_value=first_payload) as mock_collect:
+            a = main._system_info()
+            clock.advance(1)
+            b = main._system_info()
+
+        assert mock_collect.call_count == 1
+        assert a == b
+
+    def test_system_info_refreshes_after_ttl_expires(self):
+        clock = FakeClock(start=50.0)
+        first_payload = {
+            "cpu_percent": 1.0,
+            "ram_percent": 2.0,
+            "ram_used_mb": 3,
+            "ram_total_mb": 4,
+            "uptime_sec": 5,
+            "battery": {"present": True, "percent": 10, "power_plugged": True, "secs_left": 1},
+            "network": {"hostname": "pc", "current_ip": "1.1.1.1", "primary_interface": None, "interfaces": []},
+            "audio": {"active_output_device": None},
+        }
+        second_payload = {**first_payload, "cpu_percent": 99.0}
+
+        with patch("main.time.time", side_effect=clock.now), patch("main.config.SYSTEM_INFO_CACHE_TTL_SECONDS", 2.0), patch("main._collect_system_info", side_effect=[first_payload, second_payload]) as mock_collect:
+            first = main._system_info()
+            clock.advance(3)
+            second = main._system_info()
+
+        assert mock_collect.call_count == 2
+        assert first["cpu_percent"] == 1.0
+        assert second["cpu_percent"] == 99.0
+
+    def test_system_info_returns_defensive_copy(self):
+        clock = FakeClock(start=5.0)
+        payload = {
+            "cpu_percent": 12.0,
+            "ram_percent": 30.0,
+            "ram_used_mb": 1000,
+            "ram_total_mb": 2000,
+            "uptime_sec": 123,
+            "battery": {"present": False, "percent": None, "power_plugged": None, "secs_left": None},
+            "network": {
+                "hostname": "pc",
+                "current_ip": "192.168.1.10",
+                "primary_interface": {"ip": "192.168.1.10"},
+                "interfaces": [{"ip": "192.168.1.10"}],
+            },
+            "audio": {"active_output_device": {"id": "a"}},
+        }
+
+        with patch("main.time.time", side_effect=clock.now), patch("main.config.SYSTEM_INFO_CACHE_TTL_SECONDS", 5.0), patch("main._collect_system_info", return_value=payload):
+            first = main._system_info()
+            first["network"]["interfaces"].append({"ip": "8.8.8.8"})
+            first["audio"]["active_output_device"] = {"id": "changed"}
+            second = main._system_info()
+
+        assert len(second["network"]["interfaces"]) == 1
+        assert second["audio"]["active_output_device"] == {"id": "a"}
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

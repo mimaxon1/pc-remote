@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.3-preview
+
+- added cached system info snapshots with TTL to reduce repeated expensive reads during polling
+- kept system info responses isolated from callers by returning defensive copies
+- added tests covering cache reuse, cache expiry, and copy safety
+
 ## v1.3.0
 
 - fixed packaged (`.exe`) API startup in windowed mode by disabling uvicorn console logging config
