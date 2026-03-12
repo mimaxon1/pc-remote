@@ -8,6 +8,7 @@ import socket
 import sys
 import threading
 import time
+from dataclasses import dataclass, field
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from typing import Annotated, Callable, Literal, Optional
 from urllib.parse import urlsplit
@@ -162,6 +163,12 @@ class AudioDeviceChangeModel(AuthModel):
     device_id: DeviceIdStr
 
 
+@dataclass
+class LoginAttemptState:
+    attempts: list[float] = field(default_factory=list)
+    blocked_until: float = 0.0
+
+
 class LoginRateLimiter:
     def __init__(
         self,
@@ -175,23 +182,21 @@ class LoginRateLimiter:
         self._block_seconds = max(1, int(block_seconds))
         self._now_fn = now_fn
         self._lock = threading.Lock()
-        self._state: dict[str, dict[str, object]] = {}
+        self._state: dict[str, LoginAttemptState] = {}
 
-    def _prune_locked(self, client_ip: str, now: float) -> dict[str, object] | None:
+    def _prune_locked(self, client_ip: str, now: float) -> LoginAttemptState | None:
         entry = self._state.get(client_ip)
         if entry is None:
             return None
 
-        attempts = [
-            ts for ts in entry.get("attempts", []) if isinstance(ts, (int, float)) and now - float(ts) < self._window_seconds
-        ]
-        blocked_until = float(entry.get("blocked_until", 0.0) or 0.0)
+        attempts = [ts for ts in entry.attempts if now - ts < self._window_seconds]
+        blocked_until = entry.blocked_until
         if blocked_until <= now:
             blocked_until = 0.0
 
         if attempts or blocked_until:
-            entry["attempts"] = attempts
-            entry["blocked_until"] = blocked_until
+            entry.attempts = attempts
+            entry.blocked_until = blocked_until
             return entry
 
         self._state.pop(client_ip, None)
@@ -203,7 +208,7 @@ class LoginRateLimiter:
             entry = self._prune_locked(client_ip, now)
             if entry is None:
                 return None
-            blocked_until = float(entry.get("blocked_until", 0.0) or 0.0)
+            blocked_until = entry.blocked_until
             return blocked_until or None
 
     def record_failure(self, client_ip: str) -> float | None:
@@ -211,23 +216,23 @@ class LoginRateLimiter:
         with self._lock:
             entry = self._prune_locked(client_ip, now)
             if entry is None:
-                entry = {"attempts": [], "blocked_until": 0.0}
+                entry = LoginAttemptState()
 
-            blocked_until = float(entry.get("blocked_until", 0.0) or 0.0)
+            blocked_until = entry.blocked_until
             if blocked_until > now:
                 self._state[client_ip] = entry
                 return blocked_until
 
-            attempts = list(entry.get("attempts", []))
+            attempts = list(entry.attempts)
             attempts.append(now)
-            entry["attempts"] = attempts
+            entry.attempts = attempts
             if len(attempts) > self._max_attempts:
                 blocked_until = now + self._block_seconds
-                entry["blocked_until"] = blocked_until
+                entry.blocked_until = blocked_until
                 self._state[client_ip] = entry
                 return blocked_until
 
-            entry["blocked_until"] = 0.0
+            entry.blocked_until = 0.0
             self._state[client_ip] = entry
             return None
 
