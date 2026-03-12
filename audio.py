@@ -9,9 +9,12 @@ so we initialize/uninitialize COM on every call.
 
 from __future__ import annotations
 
+import logging
 from ctypes import POINTER, cast
 from types import SimpleNamespace
 from typing import Callable, TypeVar
+
+import config
 
 try:
     import comtypes
@@ -46,6 +49,7 @@ except ImportError:
     _AUDIO_BACKEND_AVAILABLE = False
 
 T = TypeVar("T")
+logger = logging.getLogger(config.LOGGER_NAME)
 
 
 def _with_endpoint(action: Callable[[object], T], default: T) -> T:
@@ -78,14 +82,14 @@ def _with_endpoint(action: Callable[[object], T], default: T) -> T:
             raise RuntimeError("Could not get IAudioEndpointVolume endpoint")
         return action(endpoint)
     except Exception as exc:
-        print(f"Audio error: {exc}")
+        logger.warning("Audio endpoint operation failed: %s", exc)
         return default
     finally:
         if initialized:
             try:
                 comtypes.CoUninitialize()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("COM cleanup after audio endpoint failed: %s", exc)
 
 
 def _with_com(action: Callable[[], T], default: T) -> T:
@@ -95,14 +99,14 @@ def _with_com(action: Callable[[], T], default: T) -> T:
         initialized = True
         return action()
     except Exception as exc:
-        print(f"Audio device error: {exc}")
+        logger.warning("Audio device operation failed: %s", exc)
         return default
     finally:
         if initialized:
             try:
                 comtypes.CoUninitialize()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("COM cleanup after audio device operation failed: %s", exc)
 
 
 def _default_output_device_info() -> dict[str, str]:

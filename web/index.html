@@ -381,7 +381,7 @@
           <label>
             <div class="label">Новый пароль</div>
             <input
-              type="text"
+              type="password"
               id="setupPassword"
               inputmode="numeric"
               maxlength="4"
@@ -588,7 +588,7 @@
               <label>
                 <div class="label">Новый пароль</div>
                 <input
-                  type="text"
+                  type="password"
                   id="newPassword"
                   autocomplete="new-password"
                   inputmode="numeric"
@@ -614,12 +614,16 @@
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </main>
 
+    <script src="/runtime-config.js"></script>
     <script>
+      const runtimeConfig = window.__PC_REMOTE_CONFIG__ || {};
       const host = window.location.hostname;
-      const port = 8000;
+      const port = Number(runtimeConfig.apiPort || 8000);
+      const webPort = Number(runtimeConfig.webPort || window.location.port || 8080);
+      const pinLength = Number(runtimeConfig.pinLength || 4);
+      const statusPollMs = Number(runtimeConfig.pollIntervalMs || 4000);
+      const pairTokenStorageKey = "pcRemotePairToken";
 
-      // The web UI (this page) is served from :8080, the API lives on :8000.
-      // We login once using password and then use a short-lived token.
       let token = "";
       let pairToken = "";
       let currentVolume = 0;
@@ -637,6 +641,30 @@
 
       function $(id) {
         return document.getElementById(id);
+      }
+
+      function isValidPin(value) {
+        return new RegExp(`^\\d{${pinLength}}$`).test(value);
+      }
+
+      function storePairToken(value) {
+        if (!value) {
+          sessionStorage.removeItem(pairTokenStorageKey);
+          return;
+        }
+        sessionStorage.setItem(pairTokenStorageKey, value);
+      }
+
+      function configurePinInputs() {
+        const ids = ["password", "setupPassword", "currentPassword", "newPassword"];
+        const placeholder = "•".repeat(pinLength);
+        for (const id of ids) {
+          const input = $(id);
+          if (!input) continue;
+          input.maxLength = pinLength;
+          input.pattern = `\\d{${pinLength}}`;
+          input.placeholder = placeholder;
+        }
       }
 
       function apiUrl(path) {
@@ -735,7 +763,7 @@
           fetchStatus();
           fetchStats();
           fetchLogs(false);
-        }, 4000);
+        }, statusPollMs);
       }
 
       function stopPolling() {
@@ -766,6 +794,7 @@
           const loginData = await loginRes.json();
           token = String(loginData.token || "");
           pairToken = "";
+          storePairToken("");
           if (!token) throw new Error();
 
           const res = await apiPost("/connect", {});
@@ -806,6 +835,7 @@
           if (completePair && pairToken) {
             await notifyQrCompleted(pairToken);
             pairToken = "";
+            storePairToken("");
           }
 
           showEntryCard("");
@@ -821,13 +851,15 @@
           startPolling();
         } catch {
           token = "";
+          pairToken = "";
+          storePairToken("");
           resetUi();
         }
       }
       async function completeSetup() {
         const btn = $("setupBtn");
         const new_password = $("setupPassword").value.trim();
-        if (!/^\d{4}$/.test(new_password)) {
+        if (!isValidPin(new_password)) {
           toast("Пароль должен быть из 4 цифр");
           return;
         }
@@ -848,6 +880,7 @@
             showEntryCard("setupBlocked");
             token = "";
             pairToken = "";
+            storePairToken("");
             return;
           }
           if (res.status === 400) {
@@ -859,6 +892,7 @@
           const data = await res.json();
           token = String(data.token || "");
           pairToken = "";
+          storePairToken("");
           requiresPasswordSetup = false;
           $("setupPassword").value = "";
           await connectWithToken({ completePair: false });
@@ -902,6 +936,7 @@
         }
         token = "";
         pairToken = "";
+        storePairToken("");
         resetUi();
       }
       async function fetchStatus() {
@@ -1235,7 +1270,7 @@
           toast("Заполни оба поля");
           return;
         }
-        if (!/^\d{4}$/.test(new_password)) {
+        if (!isValidPin(new_password)) {
           toast("Новый пароль: 4 цифры");
           return;
         }
@@ -1260,10 +1295,17 @@
         }
       }
 
-      $("apiHint").textContent = `Веб: http://${host}:8080`;
+      configurePinInputs();
+      $("apiHint").textContent = `Веб: http://${host}:${webPort}`;
 
       async function initializeApp() {
-        const tokenFromUrl = new URLSearchParams(window.location.search).get("token");
+        const params = new URLSearchParams(window.location.search);
+        const tokenFromUrl = params.get("token");
+        if (tokenFromUrl) {
+          storePairToken(String(tokenFromUrl || ""));
+          window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+        }
+        const storedPairToken = sessionStorage.getItem(pairTokenStorageKey);
         try {
           const authState = await fetchAuthState();
           requiresPasswordSetup = !!authState.requires_password_setup;
@@ -1271,10 +1313,10 @@
           requiresPasswordSetup = false;
         }
 
-        if (tokenFromUrl) {
-          pairToken = String(tokenFromUrl || "");
+        if (storedPairToken) {
+          pairToken = String(storedPairToken || "");
           token = pairToken;
-          await notifyQrOpened(pairToken);
+          if (tokenFromUrl) await notifyQrOpened(pairToken);
           if (requiresPasswordSetup) {
             showEntryCard("setup");
             return;

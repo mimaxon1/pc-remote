@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import atexit
 import ctypes
+import logging
 import os
-import sys
+
+import config
+
+logger = logging.getLogger(config.LOGGER_NAME)
 
 _mutex_handle = None
 _ERROR_ALREADY_EXISTS = 183
@@ -19,11 +23,11 @@ def _show_already_running_message() -> None:
         ctypes.windll.user32.MessageBoxW(
             None,
             "Приложение уже запущено и работает в трее.",
-            "PC Remote",
+            config.APP_NAME,
             0x00000040,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to show single-instance message box: %s", exc)
 
 
 def acquire() -> bool:
@@ -56,6 +60,6 @@ def release() -> None:
         return
     try:
         ctypes.windll.kernel32.CloseHandle(_mutex_handle)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to release single-instance mutex: %s", exc)
     _mutex_handle = None

@@ -1,13 +1,4 @@
-"""Authentication helpers (password hashing + session tokens).
-
-Goals:
-- Allow changing password without rebuilding the app (settings.json in per-user app data)
-- Avoid sending the password with every request (login -> token -> token auth)
-
-Notes:
-- This is still plain HTTP by default, so tokens can be sniffed on an unsafe LAN.
-  The big win is that the password is sent only once per session.
-"""
+"""Authentication helpers (PIN hashing + session tokens)."""
 
 from __future__ import annotations
 
@@ -15,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import shutil
@@ -26,39 +18,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+import config
 
-SETTINGS_FILENAME = "settings.json"
-SETTINGS_VERSION = 2
-APP_DIR_NAME = "PC Remote"
-LEGACY_APP_DIR_NAMES = ("PC-Android",)
+SETTINGS_VERSION = 3
 
 PBKDF2_ALGO = "pbkdf2_hmac_sha256"
 PBKDF2_ITERS = 200_000
 SALT_BYTES = 16
 
-TOKEN_TTL_SECONDS = 60 * 60  # 1 hour
+logger = logging.getLogger(config.LOGGER_NAME)
 
 
 class SettingsError(RuntimeError):
     """Raised when settings.json exists but cannot be used safely."""
 
 
-def _appdata_base_dir() -> Optional[Path]:
-    if os.name != "nt":
-        return None
-    base = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
-    return Path(base) if base else None
-
-
 def app_dir() -> Path:
     """Directory where persistent settings should live."""
-    base = _appdata_base_dir()
-    if base:
-        return base / APP_DIR_NAME
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        return Path(xdg) / APP_DIR_NAME
-    return Path.home() / ".config" / APP_DIR_NAME
+    return config.app_dir()
 
 
 def _legacy_runtime_app_dir() -> Path:
@@ -68,14 +45,14 @@ def _legacy_runtime_app_dir() -> Path:
 
 
 def _legacy_runtime_settings_path() -> Path:
-    return _legacy_runtime_app_dir() / SETTINGS_FILENAME
+    return _legacy_runtime_app_dir() / config.SETTINGS_FILENAME
 
 
 def _legacy_appdata_settings_paths() -> list[Path]:
-    base = _appdata_base_dir()
+    base = config.appdata_base_dir()
     if base is None:
         return []
-    return [base / name / SETTINGS_FILENAME for name in LEGACY_APP_DIR_NAMES]
+    return [base / name / config.SETTINGS_FILENAME for name in config.LEGACY_APP_NAMES]
 
 
 def _migrate_from_source(source: Path, target: Path) -> bool:
@@ -84,26 +61,28 @@ def _migrate_from_source(source: Path, target: Path) -> bool:
     try:
         if source.resolve() == target.resolve():
             return False
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to resolve legacy settings path %s: %s", source, exc)
 
     if target.exists():
         try:
             source.unlink()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to remove legacy settings file %s: %s", source, exc)
         return True
 
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         shutil.move(str(source), str(target))
         return True
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to move legacy settings %s -> %s: %s", source, target, exc)
         try:
             shutil.copy2(source, target)
             source.unlink(missing_ok=True)
             return True
-        except Exception:
+        except Exception as copy_exc:
+            logger.exception("Failed to migrate legacy settings %s -> %s: %s", source, target, copy_exc)
             return False
 
 
@@ -116,7 +95,7 @@ def _migrate_legacy_settings(target: Path) -> None:
 
 
 def settings_path() -> Path:
-    path = app_dir() / SETTINGS_FILENAME
+    path = app_dir() / config.SETTINGS_FILENAME
     _migrate_legacy_settings(path)
     return path
 
@@ -146,7 +125,8 @@ class PasswordHash:
         try:
             salt = _b64d(self.salt_b64)
             expected = _b64d(self.hash_b64)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to decode stored PIN hash: %s", exc)
             return False
 
         candidate = _pbkdf2_sha256(password, salt, self.iterations)
@@ -193,57 +173,83 @@ def _save_settings(data: dict[str, Any]) -> None:
     _atomic_write_json(path, data)
 
 
-def _parse_password_hash(raw: dict[str, Any], default_password: str) -> tuple[PasswordHash, bool, bool]:
-    try:
-        pw = raw["password"]
-        if not isinstance(pw, dict):
-            raise TypeError("password must be an object")
-        ph = PasswordHash(
-            algorithm=str(pw.get("algorithm", "")),
-            iterations=int(pw.get("iterations", 0)),
-            salt_b64=str(pw.get("salt", "")),
-            hash_b64=str(pw.get("hash", "")),
-        )
-    except Exception as exc:
-        raise SettingsError("settings.json has an invalid password block") from exc
-
-    has_is_default = "is_default" in pw
-    is_default = bool(pw.get("is_default", False)) if has_is_default else ph.verify(default_password)
-    return ph, is_default, has_is_default
+def _password_setup_payload() -> dict[str, bool]:
+    return {"is_set": False}
 
 
-def load_or_init_password_hash(default_password: str) -> tuple[PasswordHash, bool]:
-    """Load password hash from settings.json, or create it on first run."""
-    path = settings_path()
-    if path.exists():
-        raw = _load_settings()
-        ph, is_default, has_is_default = _parse_password_hash(raw, default_password)
-        if int(raw.get("version", 0)) < SETTINGS_VERSION or not has_is_default:
-            save_password_hash(ph, is_default=is_default)
-        return ph, is_default
-
-    ph = PasswordHash.from_password(default_password)
-    save_password_hash(ph, is_default=True)
-    return ph, True
-
-
-def save_password_hash(ph: PasswordHash, is_default: bool) -> None:
-    settings = _load_settings()
-    settings["version"] = SETTINGS_VERSION
-    settings["password"] = {
+def _password_hash_payload(ph: PasswordHash) -> dict[str, Any]:
+    return {
+        "is_set": True,
         "algorithm": ph.algorithm,
         "iterations": ph.iterations,
         "salt": ph.salt_b64,
         "hash": ph.hash_b64,
-        "is_default": bool(is_default),
     }
+
+
+def save_password_hash(ph: PasswordHash) -> None:
+    settings = _load_settings()
+    settings["version"] = SETTINGS_VERSION
+    settings["password"] = _password_hash_payload(ph)
     _save_settings(settings)
+
+
+def clear_password_setup_state() -> None:
+    settings = _load_settings()
+    settings["version"] = SETTINGS_VERSION
+    settings["password"] = _password_setup_payload()
+    _save_settings(settings)
+
+
+def _parse_password_hash(raw: dict[str, Any]) -> tuple[Optional[PasswordHash], bool]:
+    pw = raw.get("password")
+    if pw is None:
+        return None, True
+    if not isinstance(pw, dict):
+        raise SettingsError("settings.json has an invalid password block")
+
+    if bool(pw.get("is_default", False)):
+        logger.warning("Legacy default PIN detected; forcing QR setup on next launch")
+        return None, True
+
+    is_set = bool(pw.get("is_set", True))
+    if not is_set:
+        return None, True
+
+    try:
+        return PasswordHash(
+            algorithm=str(pw.get("algorithm", "")),
+            iterations=int(pw.get("iterations", 0)),
+            salt_b64=str(pw.get("salt", "")),
+            hash_b64=str(pw.get("hash", "")),
+        ), False
+    except Exception as exc:
+        raise SettingsError("settings.json has an invalid password block") from exc
+
+
+def load_or_init_password_hash() -> tuple[Optional[PasswordHash], bool]:
+    """Load the PIN hash from settings.json or initialize QR-only setup state."""
+    path = settings_path()
+    if path.exists():
+        raw = _load_settings()
+        ph, requires_setup = _parse_password_hash(raw)
+        password_block = raw.get("password")
+        needs_rewrite = int(raw.get("version", 0)) < SETTINGS_VERSION
+        if requires_setup:
+            if needs_rewrite or not isinstance(password_block, dict) or password_block.get("is_set", True):
+                clear_password_setup_state()
+        elif ph is not None and needs_rewrite:
+            save_password_hash(ph)
+        return ph, requires_setup
+
+    clear_password_setup_state()
+    return None, True
 
 
 class TokenStore:
     """In-memory token store (tokens are lost on app restart)."""
 
-    def __init__(self, ttl_seconds: int = TOKEN_TTL_SECONDS) -> None:
+    def __init__(self, ttl_seconds: int = config.TOKEN_TTL_SECONDS) -> None:
         self._ttl = int(ttl_seconds)
         self._lock = threading.Lock()
         self._tokens: dict[str, dict[str, float]] = {}
@@ -329,25 +335,29 @@ class TokenStore:
     def revoke(self, token: str) -> None:
         with self._lock:
             self._tokens.pop(token, None)
+            self._pair_tokens.pop(token, None)
 
     def clear(self) -> None:
         with self._lock:
             self._tokens.clear()
+            self._pair_tokens.clear()
 
 
 class AuthManager:
     """High-level auth wrapper used by the API."""
 
-    def __init__(self, default_password: str) -> None:
-        self._password_hash, self._password_is_default = load_or_init_password_hash(default_password)
+    def __init__(self) -> None:
+        self._password_hash, self._requires_password_setup = load_or_init_password_hash()
         self.tokens = TokenStore()
         self._lock = threading.Lock()
 
     def verify_password(self, password: str) -> bool:
+        if self._password_hash is None:
+            return False
         return self._password_hash.verify(password)
 
     def requires_password_setup(self) -> bool:
-        return self._password_is_default
+        return self._requires_password_setup
 
     def issue_token(self) -> tuple[str, int]:
         return self.tokens.issue()
@@ -374,14 +384,14 @@ class AuthManager:
     def change_password(self, new_password: str) -> None:
         with self._lock:
             self._password_hash = PasswordHash.from_password(new_password)
-            self._password_is_default = False
-            save_password_hash(self._password_hash, is_default=False)
+            self._requires_password_setup = False
+            save_password_hash(self._password_hash)
             self.tokens.clear()
 
     def setup_password(self, new_password: str) -> tuple[str, int]:
         with self._lock:
             self._password_hash = PasswordHash.from_password(new_password)
-            self._password_is_default = False
-            save_password_hash(self._password_hash, is_default=False)
+            self._requires_password_setup = False
+            save_password_hash(self._password_hash)
             self.tokens.clear()
             return self.tokens.issue()

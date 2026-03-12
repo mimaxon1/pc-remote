@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
 
-APP_NAME = "PC Remote"
-LEGACY_APP_NAME = "PC-Android"
-AUTOSTART_FILENAME = f"{APP_NAME}.cmd"
-LEGACY_AUTOSTART_FILENAME = f"{LEGACY_APP_NAME}.cmd"
+import config
+
+logger = logging.getLogger(config.LOGGER_NAME)
+
+AUTOSTART_FILENAME = f"{config.APP_NAME}.cmd"
+LEGACY_AUTOSTART_FILENAME = f"{config.LEGACY_APP_NAMES[0]}.cmd"
 
 
 def _startup_dir() -> Path:
@@ -53,8 +56,8 @@ def _migrate_legacy_autostart() -> None:
     if target.exists():
         try:
             legacy.unlink()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to remove legacy autostart file %s: %s", legacy, exc)
         return
 
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -62,8 +65,8 @@ def _migrate_legacy_autostart() -> None:
         content = f'@echo off\r\nstart "" /b {_command_line()}\r\n'
         target.write_text(content, encoding="utf-8")
         legacy.unlink()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.exception("Failed to migrate autostart file %s -> %s: %s", legacy, target, exc)
 
 
 def is_enabled() -> bool:

@@ -1,15 +1,18 @@
-# Серверная часть
-fastapi==0.104.1
-uvicorn==0.24.0
-# Системные утилиты
-psutil==5.9.6
-pycaw==20240123
-comtypes==1.2.0
-pynput==1.7.6
+# Server
+fastapi==0.135.1
+uvicorn==0.41.0
+
+# System utilities
+psutil==7.2.2
+pycaw==20251023
+comtypes==1.4.16
+pynput==1.8.1
+
 # GUI dependencies (tkinter ships with the standard Windows Python build)
-qrcode==7.4.2
+qrcode==8.2
 pystray==0.19.5
-Pillow==10.1.0
-# Тестирование
-pytest==7.4.3
-httpx==0.25.2
+Pillow==12.1.1
+
+# Testing
+pytest==9.0.2
+httpx==0.28.1

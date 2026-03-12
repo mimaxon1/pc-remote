@@ -1,134 +1,164 @@
 """Unit tests for authentication module."""
-import pytest
-import os
+
+from __future__ import annotations
+
+import json
 import shutil
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
+import pytest
+
 import auth
 
 
 class TestPasswordHash:
-    """Test PasswordHash class."""
-    
     def test_password_hash_creation(self):
-        """Test creating a password hash."""
         ph = auth.PasswordHash.from_password("1234")
         assert ph.algorithm == auth.PBKDF2_ALGO
         assert ph.iterations == auth.PBKDF2_ITERS
         assert len(ph.salt_b64) > 0
         assert len(ph.hash_b64) > 0
-    
+
     def test_password_verification(self):
-        """Test password verification."""
         ph = auth.PasswordHash.from_password("1234")
         assert ph.verify("1234") is True
         assert ph.verify("5678") is False
-    
+
     def test_password_hash_consistency(self):
-        """Test that same password always verifies same hash."""
         password = "correct-password"
         ph = auth.PasswordHash.from_password(password)
-        
-        # Should always verify correctly
         for _ in range(5):
             assert ph.verify(password) is True
 
 
 class TestTokenStore:
-    """Test TokenStore class."""
-    
     def test_token_issue(self):
-        """Test issuing a token."""
         store = auth.TokenStore(ttl_seconds=3600)
         token, ttl = store.issue()
-        
+
         assert token is not None
         assert len(token) > 0
         assert ttl == 3600
         assert store.verify(token) is True
-    
+
     def test_token_expiration(self):
-        """Test token expiration."""
         store = auth.TokenStore(ttl_seconds=1)
         token, _ = store.issue()
-        
+
         assert store.verify(token) is True
-        
-        # After expiration, token should not verify
+
         import time
+
         time.sleep(1.1)
         assert store.verify(token) is False
-    
+
     def test_pair_token_tracking(self):
-        """Test pair token status tracking."""
         store = auth.TokenStore()
         token, _ = store.issue_pair()
-        
+
         opened, completed = store.get_pair_status(token)
         assert opened is False
         assert completed is False
-        
-        # Mark as opened
+
         store.mark_pair_opened(token)
         opened, completed = store.get_pair_status(token)
         assert opened is True
         assert completed is False
-        
-        # Mark as completed
+
         store.mark_pair_completed(token)
         opened, completed = store.get_pair_status(token)
         assert opened is True
         assert completed is True
 
+    def test_revoke_clears_pair_token_state(self):
+        store = auth.TokenStore()
+        token, _ = store.issue_pair()
+
+        store.revoke(token)
+
+        assert store.verify(token) is False
+        assert store.get_pair_status(token) == (False, False)
+
 
 class TestAuthManager:
-    """Test AuthManager class."""
-    
     def setup_method(self):
-        """Setup test with temporary settings file."""
         self.temp_dir = Path(".test-auth-work")
         shutil.rmtree(self.temp_dir, ignore_errors=True)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self.original_home = os.environ.get("USERPROFILE", os.environ.get("HOME"))
-    
+
     def teardown_method(self):
-        """Cleanup temporary files."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
-    
+
     @patch("auth.settings_path")
-    def test_auth_manager_creation(self, mock_path):
-        """Test AuthManager initialization."""
+    def test_auth_manager_creation_requires_qr_setup(self, mock_path):
         settings_file = self.temp_dir / "settings.json"
         mock_path.return_value = settings_file
-        
-        manager = auth.AuthManager(default_password="1234")
-        
+
+        manager = auth.AuthManager()
+
         assert manager is not None
         assert manager.requires_password_setup() is True
-    
+        assert manager.verify_password("1234") is False
+
+        data = json.loads(settings_file.read_text(encoding="utf-8"))
+        assert data["password"]["is_set"] is False
+
     @patch("auth.settings_path")
-    def test_password_verification(self, mock_path):
-        """Test password verification through AuthManager."""
+    def test_setup_password_enables_verification(self, mock_path):
         settings_file = self.temp_dir / "settings.json"
         mock_path.return_value = settings_file
-        
-        manager = auth.AuthManager(default_password="1234")
-        
-        # Default password should verify
+
+        manager = auth.AuthManager()
+        token, ttl = manager.setup_password("1234")
+
+        assert manager.requires_password_setup() is False
         assert manager.verify_password("1234") is True
-        assert manager.verify_password("wrong") is False
-    
-    @patch("auth.settings_path")
-    def test_token_issuance(self, mock_path):
-        """Test token issuance and verification."""
-        settings_file = self.temp_dir / "settings.json"
-        mock_path.return_value = settings_file
-        
-        manager = auth.AuthManager(default_password="1234")
-        token, ttl = manager.issue_token()
-        
         assert manager.verify_token(token) is True
         assert ttl > 0
+
+    @patch("auth.settings_path")
+    def test_change_password_invalidates_old_pin(self, mock_path):
+        settings_file = self.temp_dir / "settings.json"
+        mock_path.return_value = settings_file
+
+        manager = auth.AuthManager()
+        manager.setup_password("1234")
+        manager.change_password("5678")
+
+        assert manager.verify_password("1234") is False
+        assert manager.verify_password("5678") is True
+
+    @patch("auth.settings_path")
+    def test_legacy_default_pin_is_migrated_to_setup_required(self, mock_path):
+        settings_file = self.temp_dir / "settings.json"
+        mock_path.return_value = settings_file
+
+        password_hash = auth.PasswordHash.from_password("1234")
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "password": {
+                        "algorithm": password_hash.algorithm,
+                        "iterations": password_hash.iterations,
+                        "salt": password_hash.salt_b64,
+                        "hash": password_hash.hash_b64,
+                        "is_default": True,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        manager = auth.AuthManager()
+
+        assert manager.requires_password_setup() is True
+        assert manager.verify_password("1234") is False
+
+        data = json.loads(settings_file.read_text(encoding="utf-8"))
+        assert data["version"] == auth.SETTINGS_VERSION
+        assert data["password"] == {"is_set": False}
 
 
 if __name__ == "__main__":

@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
-import os
+import logging
 import shutil
 import socket
 import sys
 from pathlib import Path
-import ipaddress
-from typing import Optional
+
+import config
+
 try:
     import psutil
+
     _PSUTIL_AVAILABLE = True
 except ImportError:
     psutil = None  # type: ignore[assignment]
     _PSUTIL_AVAILABLE = False
 
+logger = logging.getLogger(config.LOGGER_NAME)
 
 _BAD_IFACE_TOKENS = (
     "vpn",
@@ -53,47 +57,16 @@ _GOOD_IFACE_TOKENS = (
     "ether",
 )
 
-_ETH_TOKENS = (
-    "ethernet",
-    "eth",
-)
-
-_WIFI_TOKENS = (
-    "wi-fi",
-    "wifi",
-    "wlan",
-    "wireless",
-    "беспровод",
-)
-APP_DIR_NAME = "PC Remote"
-LEGACY_APP_DIR_NAMES = ("PC-Android",)
+_ETH_TOKENS = ("ethernet", "eth")
+_WIFI_TOKENS = ("wi-fi", "wifi", "wlan", "wireless", "беспровод")
 
 
 def _is_bad_iface(name: str) -> bool:
-    n = name.casefold()
-    return any(t in n for t in _BAD_IFACE_TOKENS)
+    return any(token in name.casefold() for token in _BAD_IFACE_TOKENS)
 
 
 def _is_virtualbox_hostonly_ip(ip: ipaddress.IPv4Address) -> bool:
-    # VirtualBox Host-Only default network: 192.168.56.0/24
     return ip in ipaddress.IPv4Network("192.168.56.0/24")
-
-
-def _appdata_base_dir() -> Optional[Path]:
-    if os.name != "nt":
-        return None
-    base = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
-    return Path(base) if base else None
-
-
-def _app_dir() -> Path:
-    base = _appdata_base_dir()
-    if base:
-        return base / APP_DIR_NAME
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        return Path(xdg) / APP_DIR_NAME
-    return Path.home() / ".config" / APP_DIR_NAME
 
 
 def _legacy_runtime_app_dir() -> Path:
@@ -103,14 +76,14 @@ def _legacy_runtime_app_dir() -> Path:
 
 
 def _legacy_runtime_settings_path() -> Path:
-    return _legacy_runtime_app_dir() / "settings.json"
+    return _legacy_runtime_app_dir() / config.SETTINGS_FILENAME
 
 
 def _legacy_appdata_settings_paths() -> list[Path]:
-    base = _appdata_base_dir()
+    base = config.appdata_base_dir()
     if base is None:
         return []
-    return [base / name / "settings.json" for name in LEGACY_APP_DIR_NAMES]
+    return [base / name / config.SETTINGS_FILENAME for name in config.LEGACY_APP_NAMES]
 
 
 def _migrate_from_source(source: Path, target: Path) -> bool:
@@ -119,26 +92,28 @@ def _migrate_from_source(source: Path, target: Path) -> bool:
     try:
         if source.resolve() == target.resolve():
             return False
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to resolve legacy network settings path %s: %s", source, exc)
 
     if target.exists():
         try:
             source.unlink()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to remove legacy network settings file %s: %s", source, exc)
         return True
 
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         shutil.move(str(source), str(target))
         return True
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to move legacy network settings %s -> %s: %s", source, target, exc)
         try:
             shutil.copy2(source, target)
             source.unlink(missing_ok=True)
             return True
-        except Exception:
+        except Exception as copy_exc:
+            logger.exception("Failed to migrate network settings %s -> %s: %s", source, target, copy_exc)
             return False
 
 
@@ -151,7 +126,7 @@ def _migrate_legacy_settings(target: Path) -> None:
 
 
 def _settings_path() -> Path:
-    path = _app_dir() / "settings.json"
+    path = config.app_dir() / config.SETTINGS_FILENAME
     _migrate_legacy_settings(path)
     return path
 
@@ -159,26 +134,37 @@ def _settings_path() -> Path:
 def _load_network_settings() -> tuple[str | None, str | None]:
     try:
         raw = json.loads(_settings_path().read_text(encoding="utf-8"))
-        net = raw.get("network", {}) if isinstance(raw, dict) else {}
-        preferred_iface = net.get("preferred_interface")
-        preferred_ip = net.get("preferred_ip")
-        if preferred_iface is not None:
-            preferred_iface = str(preferred_iface)
-        if preferred_ip is not None:
-            preferred_ip = str(preferred_ip)
-        return preferred_iface, preferred_ip
-    except Exception:
+    except FileNotFoundError:
         return None, None
+    except Exception as exc:
+        logger.warning("Failed to read network settings: %s", exc)
+        return None, None
+
+    if not isinstance(raw, dict):
+        logger.warning("Ignoring non-object network settings payload")
+        return None, None
+
+    net = raw.get("network", {})
+    if not isinstance(net, dict):
+        return None, None
+
+    preferred_iface = net.get("preferred_interface")
+    preferred_ip = net.get("preferred_ip")
+    if preferred_iface is not None:
+        preferred_iface = str(preferred_iface)
+    if preferred_ip is not None:
+        preferred_ip = str(preferred_ip)
+    return preferred_iface, preferred_ip
 
 
 def _score_iface(name: str, ip: ipaddress.IPv4Address) -> int:
-    n = name.casefold()
     score = 0
+    lowered = name.casefold()
     if ip.is_private:
         score += 50
-    if any(t in n for t in _GOOD_IFACE_TOKENS):
+    if any(token in lowered for token in _GOOD_IFACE_TOKENS):
         score += 20
-    if any(t in n for t in _BAD_IFACE_TOKENS):
+    if any(token in lowered for token in _BAD_IFACE_TOKENS):
         score -= 100
     if _is_virtualbox_hostonly_ip(ip):
         score -= 150
@@ -190,10 +176,10 @@ def _score_iface(name: str, ip: ipaddress.IPv4Address) -> int:
 
 
 def _interface_kind(name: str) -> str:
-    n = name.casefold()
-    if any(t in n for t in _ETH_TOKENS):
+    lowered = name.casefold()
+    if any(token in lowered for token in _ETH_TOKENS):
         return "ethernet"
-    if any(t in n for t in _WIFI_TOKENS):
+    if any(token in lowered for token in _WIFI_TOKENS):
         return "wifi"
     if _is_bad_iface(name):
         return "virtual"
@@ -212,6 +198,7 @@ def list_active_ipv4_interfaces() -> list[dict[str, object]]:
             "is_virtualbox_host_only": False,
             "is_preferred_candidate": True,
         }]
+
     items: list[dict[str, object]] = []
     addrs = psutil.net_if_addrs()
     stats = psutil.net_if_stats()
@@ -239,29 +226,24 @@ def list_active_ipv4_interfaces() -> list[dict[str, object]]:
                     "is_preferred_candidate": not _is_bad_iface(if_name) and not _is_virtualbox_hostonly_ip(ip),
                 }
             )
-    items.sort(key=lambda item: (item["name"].lower(), item["ip"]))
+    items.sort(key=lambda item: (str(item["name"]).lower(), str(item["ip"])))
     return items
 
 
 def _fallback_ip() -> str:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except Exception:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except Exception as exc:
+        logger.warning("Falling back to loopback IP: %s", exc)
         return "127.0.0.1"
     finally:
-        s.close()
+        sock.close()
 
 
 def get_local_ip() -> str:
-    """Best-effort local IP for printing the URL in console/UI.
-
-    Prefers LAN/Wi‑Fi over VPN by heuristics. Optional overrides in settings.json:
-    {
-      "network": { "preferred_interface": "...", "preferred_ip": "..." }
-    }
-    """
+    """Best-effort local IP for printing the URL in console/UI."""
     preferred_iface, preferred_ip = _load_network_settings()
 
     if not _PSUTIL_AVAILABLE:
@@ -296,15 +278,14 @@ def get_local_ip() -> str:
             if if_name.casefold() == preferred_iface.casefold():
                 return str(ip)
 
-    # Explicit preference: Ethernet first, then Wi‑Fi (skip VPN/virtual/host-only if possible)
     def pick_by_tokens(tokens: tuple[str, ...]) -> str | None:
         for if_name, ip in candidates:
-            n = if_name.casefold()
+            lowered = if_name.casefold()
             if _is_bad_iface(if_name):
                 continue
             if _is_virtualbox_hostonly_ip(ip):
                 continue
-            if any(t in n for t in tokens):
+            if any(token in lowered for token in tokens):
                 return str(ip)
         return None
 
@@ -317,8 +298,8 @@ def get_local_ip() -> str:
         return wifi_ip
 
     if candidates:
-        scored = [(_score_iface(n, ip), str(ip)) for n, ip in candidates]
-        scored.sort(key=lambda x: x[0], reverse=True)
+        scored = [(_score_iface(name, ip), str(ip)) for name, ip in candidates]
+        scored.sort(key=lambda item: item[0], reverse=True)
         return scored[0][1]
 
     return _fallback_ip()

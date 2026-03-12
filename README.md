@@ -10,7 +10,8 @@ The app runs:
 ## Features
 
 - QR-based first-run setup
-- 4-digit password for manual login
+- No default PIN in source code
+- 4-digit PIN for manual login
 - Passwordless QR reconnect
 - Volume and mute control
 - Media key control
@@ -54,6 +55,9 @@ Run `dist\PC Remote\PC Remote.exe`. No Python is required on the target PC.
 ## Configuration
 
 - `settings.json` is created in per-user app data (`%APPDATA%\PC Remote\settings.json` on Windows)
+- First run requires QR setup before a PIN exists
+- Runtime defaults are centralized in `config.py`
+- Rotating logs are written to `%APPDATA%\PC Remote\pc-remote.log`
 - Autostart uses the current user Startup folder and writes `PC Remote.cmd`
 
 ## Network

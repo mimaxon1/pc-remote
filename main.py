@@ -1,46 +1,37 @@
-"""PC controller (FastAPI + web UI + tray GUI).
-
-Runs:
-- API on :8000 (FastAPI/uvicorn)
-- Web UI static server on :8080 (serves `web/`)
-- Tray GUI for status/logs
-
-Auth:
-- On first run we create `settings.json` in per-user app data (password is stored as a hash).
-- UI logs in once (`/login`) and uses a short-lived token for the rest of the session.
-"""
-import threading
-import gui
-import uvicorn
+"""PC controller (FastAPI + web UI + tray GUI)."""
 import argparse
 import ctypes
 import functools
-import logging
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
-from config import PASSWORD as DEFAULT_PASSWORD
-import power, audio, apps
-import media
+import json
 import os
 import socket
 import sys
+import threading
 import time
-from typing import Optional
-from http.server import SimpleHTTPRequestHandler, HTTPServer
-from fastapi.middleware.cors import CORSMiddleware
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from typing import Annotated, Literal, Optional
+from urllib.parse import urlsplit
+
 import psutil
+import uvicorn
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+import apps
+import audio
 import auth
 import autostart
+import config
+import gui
+import logging_utils
+import media
 import net_utils
+import power
 import single_instance
 
-# Setup logging
-logger = logging.getLogger("PC Remote")
-logger.setLevel(logging.INFO)
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-    logger.addHandler(handler)
+logger = logging_utils.setup_logging()
 
 # Global server references for graceful shutdown
 _api_server: Optional[uvicorn.Server] = None
@@ -63,26 +54,25 @@ def _ensure_auth_manager_initialized() -> None:
         return
     _AUTH_INIT_ATTEMPTED = True
     try:
-        AUTH = auth.AuthManager(default_password=DEFAULT_PASSWORD)
+        AUTH = auth.AuthManager()
         AUTH_INIT_ERROR = None
     except auth.SettingsError as exc:
         AUTH = None
         AUTH_INIT_ERROR = str(exc)
 
-# Allowlist CORS to localhost only (security fix)
+
 allowed_origins = [
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
+    f"http://localhost:{config.WEB_PORT}",
+    f"http://127.0.0.1:{config.WEB_PORT}",
+    f"http://localhost:{config.API_PORT}",
+    f"http://127.0.0.1:{config.API_PORT}",
 ]
 try:
-    # Try to add local IP if available
     local_ip = net_utils.get_local_ip()
-    allowed_origins.append(f"http://{local_ip}:8080")
-    allowed_origins.append(f"http://{local_ip}:8000")
-except Exception:
-    pass
+    allowed_origins.append(f"http://{local_ip}:{config.WEB_PORT}")
+    allowed_origins.append(f"http://{local_ip}:{config.API_PORT}")
+except Exception as exc:
+    logger.warning("Failed to determine local IP for CORS allowlist: %s", exc)
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,44 +85,81 @@ app.add_middleware(
 # -----------------------------
 # Модели
 # -----------------------------
-class AuthModel(BaseModel):
-    # Token-based auth is preferred. Password is only required for /login and
-    # for legacy clients.
-    token: Optional[str] = None
-    password: Optional[str] = None
+PinStr = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=config.PIN_LENGTH,
+        max_length=config.PIN_LENGTH,
+        pattern=config.PIN_PATTERN,
+    ),
+]
+TokenStr = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=config.MIN_TOKEN_LENGTH,
+        max_length=config.MAX_TOKEN_LENGTH,
+    ),
+]
+DeviceIdStr = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=config.MAX_DEVICE_ID_LENGTH,
+    ),
+]
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class AuthModel(StrictModel):
+    token: Optional[TokenStr] = None
+    password: Optional[PinStr] = None
+
 
 class VolumeModel(AuthModel):
-    value: Optional[float] = None
-    action: Optional[str] = None  # "up"/"down"
+    value: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    action: Optional[Literal["up", "down"]] = None
+
+    @model_validator(mode="after")
+    def validate_volume_request(self) -> "VolumeModel":
+        if (self.value is None) == (self.action is None):
+            raise ValueError("Provide either value or action")
+        return self
+
 
 class MediaModel(AuthModel):
-    action: str
+    action: Literal["play_pause", "next", "prev", "stop"]
 
 
 class LogsModel(AuthModel):
-    limit: int = 200
+    limit: int = Field(default=config.DEFAULT_LOG_LIMIT, ge=1, le=config.MAX_LOG_LIMIT)
 
 
-class LoginModel(BaseModel):
-    password: str
+class LoginModel(StrictModel):
+    password: PinStr
 
 
 class ChangePasswordModel(AuthModel):
-    current_password: str
-    new_password: str
+    current_password: PinStr
+    new_password: PinStr
 
 
-class SetupPasswordModel(BaseModel):
-    token: str
-    new_password: str
+class SetupPasswordModel(StrictModel):
+    token: TokenStr
+    new_password: PinStr
 
 
-class PairTokenModel(BaseModel):
-    token: str
+class PairTokenModel(StrictModel):
+    token: TokenStr
 
 
 class AudioDeviceChangeModel(AuthModel):
-    device_id: str
+    device_id: DeviceIdStr
 
 
 def _auth_manager() -> auth.AuthManager:
@@ -196,6 +223,12 @@ def _system_info() -> dict[str, object]:
 # -----------------------------
 # Проверка пароля
 # -----------------------------
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 def check(token: Optional[str], password: Optional[str]) -> None:
     """Authorize a request using either a token or a password (legacy)."""
     manager = _auth_manager()
@@ -227,6 +260,8 @@ def health():
 @app.get("/auth_state")
 def auth_state():
     return {"requires_password_setup": _auth_manager().requires_password_setup()}
+
+
 @app.post("/connect")
 def connect_phone(data: AuthModel):
     """Mark phone as connected (tray status + log)."""
@@ -281,11 +316,7 @@ def change_password(request: Request, data: ChangePasswordModel):
     elif not _is_local_request(request):
         raise HTTPException(status_code=403, detail="Active session required")
 
-    new_pw = data.new_password.strip()
-    if len(new_pw) != 4 or not new_pw.isdigit():
-        raise HTTPException(status_code=400, detail="New password must be exactly 4 digits")
-
-    manager.change_password(new_pw)
+    manager.change_password(data.new_password)
     gui.add_log("Password changed")
     return {"status": "ok"}
 
@@ -298,11 +329,7 @@ def setup_password(data: SetupPasswordModel):
     if not manager.verify_token(data.token):
         raise HTTPException(status_code=403, detail="Invalid QR token")
 
-    new_pw = data.new_password.strip()
-    if len(new_pw) != 4 or not new_pw.isdigit():
-        raise HTTPException(status_code=400, detail="Password must be exactly 4 digits")
-
-    token, expires_in = manager.setup_password(new_pw)
+    token, expires_in = manager.setup_password(data.new_password)
     manager.mark_pair_completed(data.token)
     gui.add_log("Password setup completed")
     return {"status": "ok", "token": token, "expires_in": expires_in}
@@ -352,9 +379,9 @@ def volume(data: VolumeModel):
     if data.value is not None:
         audio.set_volume(data.value)
         gui.add_log(f"Громкость установлена: {data.value}")
-    elif data.action in ("up", "down"):
+    else:
         current = audio.get_volume()
-        step = 0.05
+        step = config.VOLUME_STEP
         new_value = current + step if data.action == "up" else current - step
         audio.set_volume(new_value)
         gui.add_log(f"Громкость {data.action}")
@@ -379,7 +406,8 @@ def media_action(data: MediaModel):
         media.send(data.action)
     except ValueError:
         raise HTTPException(status_code=400, detail="Unknown action")
-    except Exception:
+    except Exception as exc:
+        logger.exception("Media action failed: %s", exc)
         raise HTTPException(status_code=500, detail="Media error")
     gui.add_log(f"Media: {data.action}")
     return {"status": "ok"}
@@ -447,8 +475,7 @@ def audio_device(data: AudioDeviceChangeModel):
 def logs(data: LogsModel):
     """Return recent logs (last N lines)."""
     check(data.token, data.password)
-    limit = max(1, min(1000, int(data.limit)))
-    items = list(gui.logs[-limit:])
+    items = list(gui.logs[-data.limit:])
     return {"logs": items}
 
 @app.post("/shutdown")
@@ -482,7 +509,7 @@ def check_port_available(port: int) -> bool:
     except Exception:
         return False
 
-def verify_ports_available(api_port: int = 8000, web_port: int = 8080) -> bool:
+def verify_ports_available(api_port: int = config.API_PORT, web_port: int = config.WEB_PORT) -> bool:
     """Verify both API and web ports are available. Logs errors and returns False if not."""
     errors = []
     if not check_port_available(api_port):
@@ -497,11 +524,22 @@ def verify_ports_available(api_port: int = 8000, web_port: int = 8080) -> bool:
         return False
     return True
 
+
+def _runtime_config_script() -> bytes:
+    payload = {
+        "apiPort": config.API_PORT,
+        "webPort": config.WEB_PORT,
+        "pinLength": config.PIN_LENGTH,
+        "pollIntervalMs": config.WEB_STATUS_POLL_MS,
+        "pairPollIntervalMs": config.PAIR_STATUS_POLL_MS,
+    }
+    return f"window.__PC_REMOTE_CONFIG__ = Object.freeze({json.dumps(payload)});".encode("utf-8")
+
 # -----------------------------
 # Веб-сервер для index.html
 # ────────────────────────────
 def run_web():
-    """Serve the `web/` folder via a simple HTTP server on port 8080."""
+    """Serve the `web/` folder via a simple HTTP server."""
     global _web_server
     
     if getattr(sys, "frozen", False):
@@ -530,32 +568,44 @@ def run_web():
         raise RuntimeError("web folder not found (checked: %s)" % candidates)
 
     ip = net_utils.get_local_ip()
-    port = 8080
+    port = config.WEB_PORT
 
     class _QuietStaticHandler(SimpleHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            path = urlsplit(self.path).path
+            if path == "/runtime-config.js":
+                body = _runtime_config_script()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            super().do_GET()
+
         def log_message(self, format: str, *args) -> None:  # noqa: A003
             # In windowed builds sys.stderr can be None; suppress per-request stderr logging.
             return
 
     handler = functools.partial(_QuietStaticHandler, directory=web_dir)
-    _web_server = HTTPServer(("0.0.0.0", port), handler)
+    _web_server = HTTPServer((config.WEB_HOST, port), handler)
     logger.info(f"Web controller available at http://{ip}:{port}")
     gui.add_log(f"Web controller: http://{ip}:{port}")
-    gui.add_log(f"API: http://{ip}:8000")
+    gui.add_log(f"API: http://{ip}:{config.API_PORT}")
 
     _web_server.serve_forever()
 
 # Запуск API
 # ──────────
 def run_api():
-    """Run the FastAPI app via uvicorn on port 8000."""
+    """Run the FastAPI app via uvicorn."""
     global _api_server
-    logger.info("API starting on port 8000")
+    logger.info("API starting on port %s", config.API_PORT)
     try:
-        config = uvicorn.Config(
+        uvicorn_config = uvicorn.Config(
             app=app,
-            host="0.0.0.0",
-            port=8000,
+            host=config.API_HOST,
+            port=config.API_PORT,
             loop="asyncio",
             http="h11",
             ws="none",
@@ -564,7 +614,7 @@ def run_api():
             use_colors=False,
             log_level="info",
         )
-        _api_server = uvicorn.Server(config)
+        _api_server = uvicorn.Server(uvicorn_config)
         _api_server.run()
     except KeyboardInterrupt:
         logger.info("API server interrupted")
@@ -595,7 +645,7 @@ def shutdown_servers():
         _web_server = None
 
 
-def hide_console_after_startup(delay: float = 2.0) -> None:
+def hide_console_after_startup(delay: float = config.CONSOLE_HIDE_DELAY_SECONDS) -> None:
     """Hide the Windows console shortly after startup in packaged builds."""
     if os.name != "nt" or not getattr(sys, "frozen", False):
         return
@@ -606,8 +656,8 @@ def hide_console_after_startup(delay: float = 2.0) -> None:
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
                 ctypes.windll.user32.ShowWindow(hwnd, 0)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to hide console window: %s", exc)
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -644,7 +694,7 @@ if __name__ == "__main__":
     # Verify ports are available before starting servers
     if not verify_ports_available():
         logger.error("Cannot start: required ports are in use")
-        gui.add_log("ERROR: Cannot start - ports 8000/8080 are in use")
+        gui.add_log(f"ERROR: Cannot start - ports {config.API_PORT}/{config.WEB_PORT} are in use")
         sys.exit(1)
     
     # Register graceful shutdown
