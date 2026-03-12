@@ -760,9 +760,13 @@
       function startPolling() {
         stopPolling();
         pollTimer = setInterval(() => {
-          fetchStatus();
-          fetchStats();
-          fetchLogs(false);
+          void fetchStatus();
+          if (activeTab === "info") {
+            void fetchStats();
+          }
+          if (activeTab === "settings") {
+            void fetchLogs(false);
+          }
         }, statusPollMs);
       }
 
@@ -1093,7 +1097,7 @@
           const nearBottom =
             box.scrollTop + box.clientHeight >= box.scrollHeight - 18;
 
-          const res = await apiPost("/logs", { limit: 250 });
+          const res = await apiPost("/logs", { limit: 120 });
           if (res.status === 403 || res.status === 409) {
             await disconnect(true);
             return;
@@ -1102,7 +1106,10 @@
           const data = await res.json();
           const lines = Array.isArray(data.logs) ? data.logs : [];
 
-          box.value = lines.join("\n");
+          const nextValue = lines.join("\n");
+          if (box.value !== nextValue) {
+            box.value = nextValue;
+          }
           if (forceScrollBottom || nearBottom) {
             box.scrollTop = box.scrollHeight;
           }

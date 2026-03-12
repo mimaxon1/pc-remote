@@ -169,6 +169,12 @@ class LoginAttemptState:
     blocked_until: float = 0.0
 
 
+@dataclass
+class SystemInfoCache:
+    value: dict[str, object] | None = None
+    expires_at: float = 0.0
+
+
 class LoginRateLimiter:
     def __init__(
         self,
@@ -242,6 +248,8 @@ class LoginRateLimiter:
 
 
 LOGIN_RATE_LIMITER = LoginRateLimiter()
+SYSTEM_INFO_CACHE = SystemInfoCache()
+SYSTEM_INFO_CACHE_LOCK = threading.Lock()
 
 
 def _auth_manager() -> auth.AuthManager:
@@ -284,7 +292,7 @@ def _battery_info() -> dict[str, object]:
 
 
 def _system_info() -> dict[str, object]:
-    cpu_percent = float(psutil.cpu_percent(interval=0.2))
+    cpu_percent = float(psutil.cpu_percent(interval=0.0))
     vm = psutil.virtual_memory()
     uptime_sec = int(time.time() - psutil.boot_time())
     current_ip = net_utils.get_local_ip()
@@ -307,6 +315,20 @@ def _system_info() -> dict[str, object]:
             "active_output_device": audio.get_default_output_device(),
         },
     }
+
+
+def _get_system_info_cached() -> dict[str, object]:
+    now = time.time()
+    with SYSTEM_INFO_CACHE_LOCK:
+        if SYSTEM_INFO_CACHE.value is not None and SYSTEM_INFO_CACHE.expires_at > now:
+            return SYSTEM_INFO_CACHE.value
+
+    value = _system_info()
+    ttl = max(0.0, float(config.SYSTEM_INFO_CACHE_TTL_SECONDS))
+    with SYSTEM_INFO_CACHE_LOCK:
+        SYSTEM_INFO_CACHE.value = value
+        SYSTEM_INFO_CACHE.expires_at = now + ttl
+    return value
 
 # -----------------------------
 # Проверка PIN
@@ -525,7 +547,7 @@ def status(data: AuthModel):
 def stats(data: AuthModel):
     """Basic system stats for the web UI (CPU/RAM/Uptime)."""
     check(data.token, data.password)
-    info = _system_info()
+    info = _get_system_info_cached()
     return {
         "cpu_percent": info["cpu_percent"],
         "ram_percent": info["ram_percent"],
@@ -539,7 +561,7 @@ def stats(data: AuthModel):
 def info(data: AuthModel):
     """Detailed system info for the Info tab."""
     check(data.token, data.password)
-    return _system_info()
+    return _get_system_info_cached()
 
 
 @app.post("/audio/devices")
