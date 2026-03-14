@@ -489,6 +489,7 @@ def health():
     _ensure_auth_manager_initialized()
     return {
         "status": "healthy",
+        "version": config.APP_VERSION,
         "auth_ready": AUTH is not None and not AUTH.requires_password_setup(),
     }
 
@@ -780,10 +781,13 @@ def verify_ports_available(api_port: int = config.API_PORT, web_port: int = conf
 
 def _runtime_config_script() -> bytes:
     payload = {
+        "appVersion": config.APP_VERSION,
         "apiPort": config.API_PORT,
         "webPort": config.WEB_PORT,
         "pinLength": config.PIN_LENGTH,
         "pollIntervalMs": config.WEB_STATUS_POLL_MS,
+        "offlineRetryMinMs": config.WEB_OFFLINE_RETRY_MIN_MS,
+        "offlineRetryMaxMs": config.WEB_OFFLINE_RETRY_MAX_MS,
         "pairPollIntervalMs": config.PAIR_STATUS_POLL_MS,
     }
     return f"window.__PC_REMOTE_CONFIG__ = Object.freeze({json.dumps(payload)});".encode("utf-8")
@@ -942,8 +946,8 @@ if __name__ == "__main__":
         sys.exit(0)
     if not single_instance.acquire():
         sys.exit(0)
-    
-    logger.info("Ассистент запущен!")
+
+    logger.info("%s %s starting", config.APP_NAME, config.APP_VERSION)
     
     # Verify ports are available before starting servers
     if not verify_ports_available():

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.5
+
+- added adaptive offline retry/backoff polling in the web controller instead of fixed-interval retries during API outages
+- exposed the app version and offline retry settings through runtime config and `/health`
+- tightened local release hygiene by ignoring future `build*` and `dist*` artifact folders
+- refreshed project docs and roadmap to match the post-`v1.3.4` codebase
+
 ## v1.3.4
 
 - fixed the QR window label to show the full pairing URL with token instead of the bare web address

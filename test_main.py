@@ -109,6 +109,16 @@ class TestHealthEndpoint:
             assert "status" in data
             assert data["status"] == "healthy"
             assert "auth_ready" in data
+            assert data["version"] == main.config.APP_VERSION
+
+
+class TestRuntimeConfig:
+    def test_runtime_config_exposes_version_and_backoff(self):
+        script = main._runtime_config_script().decode("utf-8")
+
+        assert f'"appVersion": "{main.config.APP_VERSION}"' in script
+        assert f'"offlineRetryMinMs": {main.config.WEB_OFFLINE_RETRY_MIN_MS}' in script
+        assert f'"offlineRetryMaxMs": {main.config.WEB_OFFLINE_RETRY_MAX_MS}' in script
 
 
 class TestServerShutdown:

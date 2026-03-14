@@ -5,10 +5,8 @@ __pycache__/
 *.pyo
 *.pyd
 
-build/
-build_*/
-dist/
-dist_*/
+build*/
+dist*/
 1,0/
 release-builds/
 

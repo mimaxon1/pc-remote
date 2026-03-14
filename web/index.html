@@ -622,18 +622,31 @@
       const webPort = Number(runtimeConfig.webPort || window.location.port || 8080);
       const pinLength = Number(runtimeConfig.pinLength || 4);
       const statusPollMs = Number(runtimeConfig.pollIntervalMs || 4000);
+      const appVersion = String(runtimeConfig.appVersion || "dev");
+      const offlineRetryMinMs = Math.max(
+        statusPollMs,
+        Number(runtimeConfig.offlineRetryMinMs || statusPollMs),
+      );
+      const offlineRetryMaxMs = Math.max(
+        offlineRetryMinMs,
+        Number(runtimeConfig.offlineRetryMaxMs || 30000),
+      );
       const pairTokenStorageKey = "pcRemotePairToken";
 
       let token = "";
       let pairToken = "";
       let currentVolume = 0;
+      let lastKnownVolume = 0;
       let muted = false;
+      let lastKnownMuted = false;
       let activeTab = "main";
       let requiresPasswordSetup = false;
       let logCursor = 0;
 
       let pollTimer = null;
       let toastTimer = null;
+      let pollFailureCount = 0;
+      let apiOffline = false;
 
       let volumeDebounce = null;
       let volumeReqId = 0;
@@ -690,6 +703,45 @@
         $("setupBlocked").hidden = name !== "setupBlocked";
       }
 
+      function connectedStatusText() {
+        return `API: http://${host}:${port}`;
+      }
+
+      function setConnectedState() {
+        apiOffline = false;
+        $("statusTitle").textContent = "Подключено";
+        $("statusSub").textContent = connectedStatusText();
+        setDot(true);
+      }
+
+      function setOfflineState(retryMs) {
+        apiOffline = true;
+        if ($("panel").hidden) return;
+        const seconds = Math.max(1, Math.ceil(retryMs / 1000));
+        $("statusTitle").textContent = "Оффлайн";
+        $("statusSub").textContent = `API unavailable, retry in ${seconds}s`;
+        setDot(false);
+      }
+
+      async function fetchHealth() {
+        try {
+          const res = await fetch(apiUrl("/health"), { cache: "no-store" });
+          return res.ok;
+        } catch {
+          return false;
+        }
+      }
+
+      function clearPollTimer() {
+        if (pollTimer) clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+
+      function nextOfflineDelayMs() {
+        const multiplier = 2 ** Math.max(0, pollFailureCount - 1);
+        return Math.min(offlineRetryMaxMs, offlineRetryMinMs * multiplier);
+      }
+
       async function fetchAuthState() {
         const res = await fetch(apiUrl("/auth_state"));
         if (!res.ok) throw new Error();
@@ -701,6 +753,31 @@
         $("volumePill").textContent = muted ? "Без звука" : `${currentVolume}%`;
         if (syncRange) $("volumeRange").value = String(currentVolume);
         $("muteBtn").textContent = muted ? "Включить звук" : "Выключить звук";
+      }
+
+      function rememberVolumeState() {
+        lastKnownVolume = currentVolume;
+        lastKnownMuted = muted;
+      }
+
+      function restoreVolumeState(opts = {}) {
+        currentVolume = lastKnownVolume;
+        muted = lastKnownMuted;
+        updateVolumeUI(opts);
+      }
+
+      async function markApiUnavailable() {
+        setDot(false);
+        if (!token || $("panel").hidden) return false;
+
+        const healthOk = await fetchHealth();
+        if (healthOk) return false;
+
+        pollFailureCount = Math.max(1, pollFailureCount + 1);
+        const retryMs = nextOfflineDelayMs();
+        setOfflineState(retryMs);
+        scheduleNextPoll(retryMs);
+        return true;
       }
 
       function showTab(name) {
@@ -758,22 +835,51 @@
         }
       }
 
-      function startPolling() {
-        stopPolling();
-        pollTimer = setInterval(() => {
-          void fetchStatus();
-          if (activeTab === "info") {
-            void fetchStats();
-          }
-          if (activeTab === "settings") {
-            void fetchLogs(false);
-          }
-        }, statusPollMs);
+      function scheduleNextPoll(delayMs) {
+        clearPollTimer();
+        pollTimer = setTimeout(() => {
+          void runPollCycle();
+        }, Math.max(0, delayMs));
+      }
+
+      async function runPollCycle() {
+        if (!token) return;
+
+        const statusState = await fetchStatus();
+        if (statusState.sessionExpired) return;
+
+        if (!statusState.ok) {
+          pollFailureCount += 1;
+          const healthOk = await fetchHealth();
+          const retryMs = healthOk ? offlineRetryMinMs : nextOfflineDelayMs();
+          setOfflineState(retryMs);
+          scheduleNextPoll(retryMs);
+          return;
+        }
+
+        const wasOffline = apiOffline;
+        pollFailureCount = 0;
+        setConnectedState();
+        if (wasOffline) {
+          toast("Соединение восстановлено");
+        }
+
+        if (activeTab === "info") {
+          await fetchStats();
+        }
+        if (activeTab === "settings") {
+          await fetchLogs(false);
+        }
+
+        scheduleNextPoll(statusPollMs);
+      }
+
+      function startPolling(delayMs = statusPollMs) {
+        scheduleNextPoll(delayMs);
       }
 
       function stopPolling() {
-        if (pollTimer) clearInterval(pollTimer);
-        pollTimer = null;
+        clearPollTimer();
       }
 
       async function connect() {
@@ -808,14 +914,20 @@
           $("auth").hidden = true;
           $("panel").hidden = false;
           showTab("main");
-          $("statusTitle").textContent = "Подключено";
-          $("statusSub").textContent = `API: http://${host}:${port}`;
-          setDot(true);
+          setConnectedState();
 
-          await fetchStatus();
-          await fetchStats();
-          await fetchLogs(true);
-          startPolling();
+          const initialStatus = await fetchStatus();
+          if (initialStatus.sessionExpired) return;
+          if (initialStatus.ok) {
+            await fetchStats();
+            await fetchLogs(true);
+            pollFailureCount = 0;
+            startPolling();
+          } else {
+            pollFailureCount = 1;
+            setOfflineState(offlineRetryMinMs);
+            startPolling(offlineRetryMinMs);
+          }
 
           $("password").value = "";
         } catch {
@@ -846,14 +958,20 @@
           showEntryCard("");
           $("panel").hidden = false;
           showTab("main");
-          $("statusTitle").textContent = "Подключено";
-          $("statusSub").textContent = `API: http://${host}:${port}`;
-          setDot(true);
+          setConnectedState();
 
-          await fetchStatus();
-          await fetchStats();
-          await fetchLogs(true);
-          startPolling();
+          const initialStatus = await fetchStatus();
+          if (initialStatus.sessionExpired) return;
+          if (initialStatus.ok) {
+            await fetchStats();
+            await fetchLogs(true);
+            pollFailureCount = 0;
+            startPolling();
+          } else {
+            pollFailureCount = 1;
+            setOfflineState(offlineRetryMinMs);
+            startPolling(offlineRetryMinMs);
+          }
         } catch {
           token = "";
           pairToken = "";
@@ -926,6 +1044,10 @@
         $("audioDeviceStatus").textContent = "Выбери устройство вывода.";
         $("logsBox").value = "";
         logCursor = 0;
+        pollFailureCount = 0;
+        apiOffline = false;
+        lastKnownVolume = 0;
+        lastKnownMuted = false;
         $("currentPassword").value = "";
         $("newPassword").value = "";
         $("setupPassword").value = "";
@@ -951,7 +1073,7 @@
           if (res.status === 403 || res.status === 409) {
             toast("Сессия истекла, подключись заново");
             await disconnect(true);
-            return;
+            return { ok: false, sessionExpired: true };
           }
           if (!res.ok) throw new Error();
           const data = await res.json();
@@ -959,9 +1081,15 @@
           currentVolume = Math.round(Number(data.volume) * 100);
           muted = !!data.muted;
           updateVolumeUI();
-          setDot(true);
+          rememberVolumeState();
+          return { ok: true, sessionExpired: false };
         } catch {
-          setDot(false);
+          if (token && !$("panel").hidden) {
+            setOfflineState(offlineRetryMinMs);
+          } else {
+            setDot(false);
+          }
+          return { ok: false, sessionExpired: false };
         }
       }
 
@@ -1022,6 +1150,7 @@
 
           $("audioOutputPill").textContent = `Текущее: ${activeOutput.name || "--"}`;
         } catch {
+          await markApiUnavailable();
           // keep old values
         }
       }
@@ -1059,6 +1188,7 @@
             ? `Найдено устройств вывода: ${devices.length}.`
             : "Активные устройства вывода не найдены.";
         } catch {
+          await markApiUnavailable();
           $("audioDeviceStatus").textContent = "Не удалось загрузить список устройств.";
         }
       }
@@ -1088,6 +1218,7 @@
             ? `Переключено на ${activeOutput.name}.`
             : "Устройство вывода изменено.";
         } catch {
+          await markApiUnavailable();
           $("audioDeviceStatus").textContent = "Не удалось переключить устройство.";
           toast("Ошибка смены устройства");
         }
@@ -1130,6 +1261,7 @@
             box.scrollTop = box.scrollHeight;
           }
         } catch {
+          await markApiUnavailable();
           // ignore
         }
       }
@@ -1142,6 +1274,7 @@
           muted = data.muted;
         }
         updateVolumeUI(opts);
+        rememberVolumeState();
       }
 
       function onVolumeInput(v) {
@@ -1170,6 +1303,8 @@
           if (reqId !== volumeReqId) return;
           syncVolumeFromResponse(data);
         } catch {
+          restoreVolumeState();
+          await markApiUnavailable();
           toast("Не удалось изменить громкость");
         }
       }
@@ -1201,6 +1336,8 @@
           syncVolumeFromResponse(data);
         } catch {
           queuedVolumeSteps = 0;
+          restoreVolumeState();
+          await markApiUnavailable();
           toast("Не удалось изменить громкость");
         } finally {
           volumeStepBusy = false;
@@ -1234,7 +1371,9 @@
           const data = await res.json();
           muted = !!data.muted;
           updateVolumeUI();
+          rememberVolumeState();
         } catch {
+          await markApiUnavailable();
           toast("Не удалось переключить звук");
         }
       }
@@ -1249,6 +1388,7 @@
           }
           if (!res.ok) throw new Error();
         } catch {
+          await markApiUnavailable();
           toast("Ошибка медиа");
         }
       }
@@ -1265,6 +1405,7 @@
           if (!res.ok) throw new Error();
           toast("Команда отправлена");
         } catch {
+          await markApiUnavailable();
           toast("Ошибка выключения");
         }
       }
@@ -1281,6 +1422,7 @@
           if (!res.ok) throw new Error();
           toast("Команда отправлена");
         } catch {
+          await markApiUnavailable();
           toast("Ошибка перезагрузки");
         }
       }
@@ -1314,12 +1456,13 @@
           stopPolling();
           resetUi();
         } catch {
+          await markApiUnavailable();
           toast("Ошибка смены PIN");
         }
       }
 
       configurePinInputs();
-      $("apiHint").textContent = `Веб: http://${host}:${webPort}`;
+      $("apiHint").textContent = `Веб: http://${host}:${webPort} | v${appVersion}`;
 
       async function initializeApp() {
         const params = new URLSearchParams(window.location.search);
