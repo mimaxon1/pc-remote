@@ -6,6 +6,7 @@ import json
 import os
 import socket
 from socketserver import TCPServer
+import subprocess
 import sys
 import threading
 import time
@@ -49,6 +50,113 @@ app = FastAPI()
 AUTH: Optional[auth.AuthManager] = None
 AUTH_INIT_ERROR: Optional[str] = None
 _AUTH_INIT_ATTEMPTED = False
+_RESTART_REQUESTED = False
+_RESTART_LOCK = threading.Lock()
+_HIDDEN_PROCESS_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _launched_from_vscode() -> bool:
+    if str(os.environ.get("TERM_PROGRAM", "")).strip().lower() == "vscode":
+        return True
+    return any(
+        str(os.environ.get(name, "")).strip()
+        for name in ("VSCODE_PID", "VSCODE_CWD", "VSCODE_IPC_HOOK_CLI")
+    )
+
+
+def _should_reset_persisted_state_for_vscode() -> bool:
+    if getattr(sys, "frozen", False):
+        return False
+    if not _launched_from_vscode():
+        return False
+    return _env_flag("PC_REMOTE_VSCODE_CLEAN_START", False)
+
+
+def _prepare_vscode_clean_start() -> list[Path]:
+    if not _should_reset_persisted_state_for_vscode():
+        return []
+    return auth.remove_persisted_settings()
+
+
+def _source_restart_command() -> list[str]:
+    python_exe = Path(sys.executable)
+    if python_exe.name.lower() == "python.exe":
+        pythonw = python_exe.with_name("pythonw.exe")
+        if pythonw.exists():
+            python_exe = pythonw
+    return [str(python_exe), str(Path(__file__).resolve())]
+
+
+def _restart_command() -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    return _source_restart_command()
+
+
+def _powershell_quote(value: str) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _spawn_restart_watcher(command: list[str], wait_pid: int | None = None, cwd: str | None = None) -> None:
+    if not command:
+        raise ValueError("restart command is empty")
+
+    pid_to_wait = int(wait_pid or os.getpid())
+    working_dir = str(cwd or Path(__file__).resolve().parent)
+    file_path = _powershell_quote(command[0])
+    argument_items = ", ".join(_powershell_quote(arg) for arg in command[1:])
+    argument_clause = f" -ArgumentList @({argument_items})" if argument_items else ""
+    script = (
+        f"$pidToWait = {pid_to_wait}\n"
+        "while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) {\n"
+        "    Start-Sleep -Milliseconds 200\n"
+        "}\n"
+        f"Start-Process -FilePath {file_path} -WorkingDirectory {_powershell_quote(working_dir)}{argument_clause}\n"
+    )
+    subprocess.Popen(
+        ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script],
+        creationflags=_HIDDEN_PROCESS_FLAGS,
+        close_fds=False,
+    )
+
+
+def _restart_worker(clean_start: bool) -> None:
+    global _RESTART_REQUESTED
+    time.sleep(0.5)
+    try:
+        if clean_start:
+            removed = auth.remove_persisted_settings()
+            if removed:
+                logger.info("Clean restart removed persisted settings: %s", removed)
+        _spawn_restart_watcher(_restart_command())
+        gui.request_exit()
+    except Exception as exc:
+        logger.exception("Failed to restart application: %s", exc)
+        gui.add_log(f"Restart failed: {exc}")
+        with _RESTART_LOCK:
+            _RESTART_REQUESTED = False
+
+
+def _request_application_restart(clean_start: bool = False) -> bool:
+    global _RESTART_REQUESTED
+    with _RESTART_LOCK:
+        if _RESTART_REQUESTED:
+            return False
+        _RESTART_REQUESTED = True
+    threading.Thread(
+        target=_restart_worker,
+        args=(clean_start,),
+        name="App-Restart",
+        daemon=True,
+    ).start()
+    return True
 
 
 def _ensure_auth_manager_initialized() -> None:
@@ -180,9 +288,36 @@ AppPathStr = Annotated[
     ),
 ]
 
+LaunchTextStr = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=4096,
+    ),
+]
+
 
 class AppLaunchModel(AuthModel):
+    path: Optional[AppPathStr] = None
+    name: Optional[LaunchTextStr] = None
+    args: Optional[LaunchTextStr] = None
+    aumid: Optional[LaunchTextStr] = None
+
+
+class AppPinModel(AuthModel):
     path: AppPathStr
+    name: Optional[LaunchTextStr] = None
+    args: Optional[LaunchTextStr] = None
+    aumid: Optional[LaunchTextStr] = None
+
+
+class AppWindowActionModel(AppPinModel):
+    action: Literal["minimize", "close"]
+
+
+class AppRestartModel(AuthModel):
+    clean_start: bool = False
 
 
 @dataclass
@@ -568,6 +703,21 @@ def logout(data: AuthModel):
         manager.tokens.revoke(data.token)
     return {"status": "bye"}
 
+
+@app.post("/app/restart")
+def restart_app(request: Request, data: AppRestartModel):
+    """Restart the desktop app, optionally wiping persisted setup first."""
+    if not _is_local_request(request):
+        check(data.token, data.password)
+    elif data.token or data.password:
+        check(data.token, data.password)
+
+    scheduled = _request_application_restart(clean_start=bool(data.clean_start))
+    if scheduled:
+        gui.add_log("Clean restart requested" if data.clean_start else "Restart requested")
+        return {"status": "restarting", "clean_start": bool(data.clean_start)}
+    return {"status": "already_restarting", "clean_start": bool(data.clean_start)}
+
 @app.post("/change_password")
 def change_password(request: Request, data: ChangePasswordModel):
     """Change the PIN (writes settings.json in per-user app data).
@@ -748,25 +898,90 @@ def recent_apps(data: AuthModel):
     check(data.token, data.password)
     return {
         "apps": apps.list_recent(limit=12),
+        "pinned_apps": apps.list_pinned(),
     }
 
 
 @app.post("/apps/open")
 def open_app(data: AppLaunchModel):
-    """Launch an application by absolute executable path."""
+    """Launch an application by absolute executable path or the most recent app."""
     check(data.token, data.password)
     try:
-        apps.start(data.path)
+        launched_app = apps.start(data.path, name=data.name, args=data.args, aumid=data.aumid)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    target = Path(data.path)
-    gui.add_log(f"App started: {target.stem}")
+    gui.add_log(f"App launch requested: {launched_app['name']}")
     return {
         "status": "ok",
-        "apps": apps.list_recent(limit=12, prioritized_paths=[str(target)]),
+        "launched_app": launched_app,
+        "apps": apps.list_recent(limit=12, prioritized_items=[launched_app]),
+        "pinned_apps": apps.list_pinned(),
+    }
+
+
+@app.post("/apps/window")
+def control_app_window(data: AppWindowActionModel):
+    """Minimize or close an already opened application window."""
+    check(data.token, data.password)
+    try:
+        app_item = apps.window_action(
+            data.action,
+            data.path,
+            name=data.name,
+            args=data.args,
+            aumid=data.aumid,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    gui.add_log(f"App {data.action}: {app_item['name']}")
+    return {
+        "status": "ok",
+        "action": data.action,
+        "app": app_item,
+        "apps": apps.list_recent(limit=12),
+        "pinned_apps": apps.list_pinned(),
+    }
+
+
+@app.post("/apps/pin")
+def pin_app(data: AppPinModel):
+    """Pin an executable for quick launch, even when recent apps are empty."""
+    check(data.token, data.password)
+    try:
+        pinned_app = apps.pin(data.path, name=data.name, args=data.args, aumid=data.aumid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    gui.add_log(f"App pinned: {pinned_app['name']}")
+    return {
+        "status": "ok",
+        "pinned_app": pinned_app,
+        "pinned_apps": apps.list_pinned(),
+    }
+
+
+@app.post("/apps/unpin")
+def unpin_app(data: AppPinModel):
+    """Remove an executable from the quick-launch pinned list."""
+    check(data.token, data.password)
+    try:
+        removed = apps.unpin(data.path, args=data.args, aumid=data.aumid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if removed:
+        gui.add_log(f"App unpinned: {Path(data.path).stem}")
+
+    return {
+        "status": "ok",
+        "removed": removed,
+        "pinned_apps": apps.list_pinned(),
     }
 
 
@@ -1007,6 +1222,12 @@ if __name__ == "__main__":
         sys.exit(0)
     if not single_instance.acquire():
         sys.exit(0)
+
+    removed_settings = _prepare_vscode_clean_start()
+    if removed_settings:
+        print("VS Code clean start: removed persisted settings")
+        for path in removed_settings:
+            print(f"  - {path}")
 
     logger.info("%s %s starting", config.APP_NAME, config.APP_VERSION)
     

@@ -100,6 +100,43 @@ def settings_path() -> Path:
     return path
 
 
+def settings_candidates() -> list[Path]:
+    candidates = [app_dir() / config.SETTINGS_FILENAME]
+    candidates.extend(_legacy_appdata_settings_paths())
+    candidates.append(_legacy_runtime_settings_path())
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    return unique
+
+
+def remove_persisted_settings() -> list[Path]:
+    removed: list[Path] = []
+    for path in settings_candidates():
+        if not path.exists():
+            continue
+        try:
+            path.unlink()
+            removed.append(path)
+        except Exception as exc:
+            logger.warning("Failed to remove settings file %s: %s", path, exc)
+            continue
+
+        parent = path.parent
+        try:
+            if parent.exists() and not any(parent.iterdir()):
+                parent.rmdir()
+        except OSError:
+            pass
+    return removed
+
+
 def _b64e(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
 

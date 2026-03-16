@@ -120,6 +120,70 @@ class TestRuntimeConfig:
         assert f'"offlineRetryMaxMs": {main.config.WEB_OFFLINE_RETRY_MAX_MS}' in script
 
 
+class TestVsCodeCleanStart:
+    def test_should_not_reset_persisted_state_for_vscode_by_default(self):
+        with patch("main.sys.frozen", False, create=True), patch.dict(
+            "main.os.environ",
+            {"TERM_PROGRAM": "vscode"},
+            clear=True,
+        ):
+            assert main._should_reset_persisted_state_for_vscode() is False
+
+    def test_should_reset_persisted_state_when_explicitly_enabled(self):
+        with patch("main.sys.frozen", False, create=True), patch.dict(
+            "main.os.environ",
+            {
+                "TERM_PROGRAM": "vscode",
+                "PC_REMOTE_VSCODE_CLEAN_START": "1",
+            },
+            clear=True,
+        ):
+            assert main._should_reset_persisted_state_for_vscode() is True
+
+    def test_prepare_vscode_clean_start_skips_non_vscode_runs(self):
+        with patch("main._should_reset_persisted_state_for_vscode", return_value=False), patch("main.auth.remove_persisted_settings") as mock_remove:
+            removed = main._prepare_vscode_clean_start()
+
+        assert removed == []
+        mock_remove.assert_not_called()
+
+
+class TestRestartEndpoint:
+    def test_restart_endpoint_schedules_clean_restart_for_remote_client(self):
+        client = TestClient(main.app)
+
+        with patch("main.check") as mock_check, patch("main._request_application_restart", return_value=True) as mock_restart, patch("main.gui.add_log") as mock_add_log:
+            response = client.post("/app/restart", json={"token": "x" * 32, "clean_start": True})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "restarting", "clean_start": True}
+        mock_check.assert_called_once_with("x" * 32, None)
+        mock_restart.assert_called_once_with(clean_start=True)
+        mock_add_log.assert_called_once_with("Clean restart requested")
+
+    def test_restart_endpoint_allows_local_request_without_auth(self):
+        client = TestClient(main.app)
+
+        with patch("main._is_local_request", return_value=True), patch("main.check") as mock_check, patch("main._request_application_restart", return_value=True) as mock_restart, patch("main.gui.add_log"):
+            response = client.post("/app/restart", json={"clean_start": True})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "restarting", "clean_start": True}
+        mock_check.assert_not_called()
+        mock_restart.assert_called_once_with(clean_start=True)
+
+    def test_restart_endpoint_reports_already_restarting(self):
+        client = TestClient(main.app)
+
+        with patch("main.check"), patch("main._request_application_restart", return_value=False) as mock_restart, patch("main.gui.add_log") as mock_add_log:
+            response = client.post("/app/restart", json={"token": "x" * 32, "clean_start": True})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "already_restarting", "clean_start": True}
+        mock_restart.assert_called_once_with(clean_start=True)
+        mock_add_log.assert_not_called()
+
+
 class TestStaticHttpServer:
     def test_server_bind_skips_reverse_dns_lookup(self):
         server = object.__new__(main._StaticHTTPServer)
@@ -353,27 +417,88 @@ class TestAppsEndpoints:
             {"name": "Telegram", "path": r"C:\Apps\Telegram.exe"},
             {"name": "Discord", "path": r"C:\Apps\Discord.exe"},
         ]
+        pinned = [{"name": "Firefox", "path": r"C:\Apps\Firefox.exe"}]
 
-        with patch("main.check"), patch("main.apps.list_recent", return_value=payload) as mock_list_recent:
+        with patch("main.check"), patch("main.apps.list_recent", return_value=payload) as mock_list_recent, patch("main.apps.list_pinned", return_value=pinned) as mock_list_pinned:
             response = client.post("/apps/recent", json={"token": "x" * 32})
 
         assert response.status_code == 200
-        assert response.json() == {"apps": payload}
+        assert response.json() == {"apps": payload, "pinned_apps": pinned}
         mock_list_recent.assert_called_once_with(limit=12)
+        mock_list_pinned.assert_called_once_with()
 
     def test_open_app_endpoint_starts_application_and_returns_refreshed_recent_apps(self):
         client = TestClient(main.app)
         app_path = r"C:\Apps\Notion.exe"
+        launched_app = {"name": "Notion", "path": app_path}
         refreshed = [{"name": "Notion", "path": app_path}]
+        pinned = [{"name": "Discord", "path": r"C:\Apps\Discord.exe"}]
 
-        with patch("main.check"), patch("main.apps.start") as mock_start, patch("main.apps.list_recent", return_value=refreshed) as mock_list_recent, patch("main.gui.add_log") as mock_add_log:
+        with patch("main.check"), patch("main.apps.start", return_value=launched_app) as mock_start, patch("main.apps.list_recent", return_value=refreshed) as mock_list_recent, patch("main.apps.list_pinned", return_value=pinned) as mock_list_pinned, patch("main.gui.add_log") as mock_add_log:
             response = client.post("/apps/open", json={"token": "x" * 32, "path": app_path})
 
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "apps": refreshed}
-        mock_start.assert_called_once_with(app_path)
-        mock_list_recent.assert_called_once_with(limit=12, prioritized_paths=[app_path])
-        mock_add_log.assert_called_once_with("App started: Notion")
+        assert response.json() == {"status": "ok", "launched_app": launched_app, "apps": refreshed, "pinned_apps": pinned}
+        mock_start.assert_called_once_with(app_path, name=None, args=None, aumid=None)
+        mock_list_recent.assert_called_once_with(limit=12, prioritized_items=[launched_app])
+        mock_list_pinned.assert_called_once_with()
+        mock_add_log.assert_called_once_with("App launch requested: Notion")
+
+    def test_open_app_endpoint_without_path_starts_most_recent_application(self):
+        client = TestClient(main.app)
+        app_path = r"C:\Apps\Telegram.exe"
+        launched_app = {"name": "Telegram", "path": app_path}
+        refreshed = [launched_app]
+        pinned = [{"name": "Firefox", "path": r"C:\Apps\Firefox.exe"}]
+
+        with patch("main.check"), patch("main.apps.start", return_value=launched_app) as mock_start, patch("main.apps.list_recent", return_value=refreshed) as mock_list_recent, patch("main.apps.list_pinned", return_value=pinned) as mock_list_pinned, patch("main.gui.add_log") as mock_add_log:
+            response = client.post("/apps/open", json={"token": "x" * 32})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "launched_app": launched_app, "apps": refreshed, "pinned_apps": pinned}
+        mock_start.assert_called_once_with(None, name=None, args=None, aumid=None)
+        mock_list_recent.assert_called_once_with(limit=12, prioritized_items=[launched_app])
+        mock_list_pinned.assert_called_once_with()
+        mock_add_log.assert_called_once_with("App launch requested: Telegram")
+
+    def test_open_app_endpoint_preserves_shortcut_arguments(self):
+        client = TestClient(main.app)
+        app_path = r"C:\Apps\chrome.exe"
+        shortcut_args = "--app-id=telegram"
+        launched_app = {"name": "Telegram", "path": app_path, "args": shortcut_args}
+        refreshed = [launched_app]
+
+        with patch("main.check"), patch("main.apps.start", return_value=launched_app) as mock_start, patch("main.apps.list_recent", return_value=refreshed) as mock_list_recent, patch("main.apps.list_pinned", return_value=[]) as mock_list_pinned, patch("main.gui.add_log") as mock_add_log:
+            response = client.post(
+                "/apps/open",
+                json={"token": "x" * 32, "path": app_path, "name": "Telegram", "args": shortcut_args},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "launched_app": launched_app, "apps": refreshed, "pinned_apps": []}
+        mock_start.assert_called_once_with(app_path, name="Telegram", args=shortcut_args, aumid=None)
+        mock_list_recent.assert_called_once_with(limit=12, prioritized_items=[launched_app])
+        mock_list_pinned.assert_called_once_with()
+        mock_add_log.assert_called_once_with("App launch requested: Telegram")
+
+    def test_window_action_endpoint_controls_existing_app_window(self):
+        client = TestClient(main.app)
+        app_path = r"C:\Apps\Telegram.exe"
+        app_item = {"name": "Telegram", "path": app_path}
+        refreshed = [app_item]
+
+        with patch("main.check"), patch("main.apps.window_action", return_value=app_item) as mock_window_action, patch("main.apps.list_recent", return_value=refreshed) as mock_list_recent, patch("main.apps.list_pinned", return_value=[]) as mock_list_pinned, patch("main.gui.add_log") as mock_add_log:
+            response = client.post(
+                "/apps/window",
+                json={"token": "x" * 32, "path": app_path, "action": "minimize"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "action": "minimize", "app": app_item, "apps": refreshed, "pinned_apps": []}
+        mock_window_action.assert_called_once_with("minimize", app_path, name=None, args=None, aumid=None)
+        mock_list_recent.assert_called_once_with(limit=12)
+        mock_list_pinned.assert_called_once_with()
+        mock_add_log.assert_called_once_with("App minimize: Telegram")
 
     def test_open_app_endpoint_returns_bad_request_for_invalid_application(self):
         client = TestClient(main.app)
@@ -383,6 +508,56 @@ class TestAppsEndpoints:
 
         assert response.status_code == 400
         assert response.json() == {"detail": "application path does not exist"}
+
+    def test_window_action_endpoint_returns_bad_request_when_window_missing(self):
+        client = TestClient(main.app)
+
+        with patch("main.check"), patch("main.apps.window_action", side_effect=ValueError("application window not found")):
+            response = client.post(
+                "/apps/window",
+                json={"token": "x" * 32, "path": r"C:\Apps\Telegram.exe", "action": "close"},
+            )
+
+        assert response.status_code == 400
+        assert response.json() == {"detail": "application window not found"}
+
+    def test_open_app_endpoint_rejects_non_user_process(self):
+        client = TestClient(main.app)
+
+        with patch("main.check"), patch("main.apps.start", side_effect=ValueError("application is not suitable for quick launch")):
+            response = client.post("/apps/open", json={"token": "x" * 32, "path": r"C:\Windows\System32\SearchFilterHost.exe"})
+
+        assert response.status_code == 400
+        assert response.json() == {"detail": "application is not suitable for quick launch"}
+
+    def test_pin_app_endpoint_saves_app_and_returns_pinned_list(self):
+        client = TestClient(main.app)
+        app_path = r"C:\Apps\Steam.exe"
+        pinned_app = {"name": "Steam", "path": app_path}
+        pinned = [pinned_app]
+
+        with patch("main.check"), patch("main.apps.pin", return_value=pinned_app) as mock_pin, patch("main.apps.list_pinned", return_value=pinned) as mock_list_pinned, patch("main.gui.add_log") as mock_add_log:
+            response = client.post("/apps/pin", json={"token": "x" * 32, "path": app_path})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "pinned_app": pinned_app, "pinned_apps": pinned}
+        mock_pin.assert_called_once_with(app_path, name=None, args=None, aumid=None)
+        mock_list_pinned.assert_called_once_with()
+        mock_add_log.assert_called_once_with("App pinned: Steam")
+
+    def test_unpin_app_endpoint_removes_app_and_returns_remaining_pins(self):
+        client = TestClient(main.app)
+        app_path = r"C:\Apps\Steam.exe"
+        remaining = [{"name": "Firefox", "path": r"C:\Apps\Firefox.exe"}]
+
+        with patch("main.check"), patch("main.apps.unpin", return_value=True) as mock_unpin, patch("main.apps.list_pinned", return_value=remaining) as mock_list_pinned, patch("main.gui.add_log") as mock_add_log:
+            response = client.post("/apps/unpin", json={"token": "x" * 32, "path": app_path})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "removed": True, "pinned_apps": remaining}
+        mock_unpin.assert_called_once_with(app_path, args=None, aumid=None)
+        mock_list_pinned.assert_called_once_with()
+        mock_add_log.assert_called_once_with("App unpinned: Steam")
 
 
 if __name__ == "__main__":

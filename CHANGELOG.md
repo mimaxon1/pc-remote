@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.4.0
+
+- added quick app actions in the web controller for opening, minimizing, and closing user apps
+- added persistent pinned apps alongside recent apps for faster launches from a clean desktop state
+- improved app discovery and launch handling for desktop apps, shortcuts, and packaged Windows apps
+- added web controller appearance settings with dark/light theme switching
+- added Russian/English UI language switching in the web controller
+- improved clean restart and GUI shutdown handling around setup reset flows
+- expanded tests for apps, GUI shutdown safety, and updated controller API behavior
+
 ## v1.3.5
 
 - added adaptive offline retry/backoff polling in the web controller instead of fixed-interval retries during API outages

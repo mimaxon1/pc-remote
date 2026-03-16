@@ -18,12 +18,35 @@
         --stroke: rgba(255, 255, 255, 0.12);
         --text: rgba(255, 255, 255, 0.92);
         --muted: rgba(255, 255, 255, 0.6);
+        --focus: rgba(255, 255, 255, 0.22);
         --ok: #34d399;
         --bad: #fb7185;
         --btn: rgba(255, 255, 255, 0.08);
         --btn2: rgba(255, 255, 255, 0.12);
         --danger: rgba(251, 113, 133, 0.16);
+        --danger-stroke: rgba(251, 113, 133, 0.35);
+        --field: rgba(0, 0, 0, 0.22);
+        --surface-soft: rgba(0, 0, 0, 0.18);
+        --toast-bg: rgba(0, 0, 0, 0.55);
         --radius: 16px;
+      }
+
+      :root[data-theme="light"] {
+        --bg: #eef2f8;
+        --card: #ffffff;
+        --stroke: rgba(15, 23, 42, 0.12);
+        --text: rgba(15, 23, 42, 0.92);
+        --muted: rgba(15, 23, 42, 0.62);
+        --focus: rgba(15, 23, 42, 0.24);
+        --ok: #059669;
+        --bad: #e11d48;
+        --btn: rgba(15, 23, 42, 0.05);
+        --btn2: rgba(15, 23, 42, 0.1);
+        --danger: rgba(225, 29, 72, 0.12);
+        --danger-stroke: rgba(225, 29, 72, 0.28);
+        --field: rgba(15, 23, 42, 0.05);
+        --surface-soft: rgba(15, 23, 42, 0.04);
+        --toast-bg: rgba(255, 255, 255, 0.92);
       }
 
       * {
@@ -110,7 +133,7 @@
         font-size: 16px;
         border-radius: 12px;
         border: 1px solid var(--stroke);
-        background: rgba(0, 0, 0, 0.22);
+        background: var(--field);
         color: var(--text);
         outline: none;
       }
@@ -118,7 +141,7 @@
       input[type="password"]:focus,
       input[type="text"]:focus,
       select:focus {
-        border-color: rgba(255, 255, 255, 0.22);
+        border-color: var(--focus);
       }
 
       .btn {
@@ -152,7 +175,7 @@
       }
 
       .btn-danger {
-        border-color: rgba(251, 113, 133, 0.35);
+        border-color: var(--danger-stroke);
         background: var(--danger);
       }
 
@@ -169,7 +192,7 @@
 
       .tab-btn.active {
         background: var(--btn2);
-        border-color: rgba(255, 255, 255, 0.2);
+        border-color: var(--focus);
       }
 
       .statusline {
@@ -236,7 +259,7 @@
         border: 1px solid var(--stroke);
         border-radius: 999px;
         padding: 6px 10px;
-        background: rgba(0, 0, 0, 0.18);
+        background: var(--surface-soft);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -266,10 +289,54 @@
         gap: 10px;
       }
 
+      .quick-app-primary,
       .quick-app-row {
         display: grid;
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr) auto;
         gap: 10px;
+        align-items: center;
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid var(--stroke);
+        background: var(--surface-soft);
+      }
+
+      .quick-app-meta {
+        min-width: 0;
+      }
+
+      .quick-app-group {
+        display: grid;
+        gap: 10px;
+      }
+
+      .quick-app-actions {
+        display: grid;
+        gap: 8px;
+      }
+
+      .quick-app-actions .btn {
+        width: 100%;
+      }
+
+      .quick-app-name {
+        margin-top: 4px;
+        font-size: 16px;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .quick-app-hint {
+        margin-top: 4px;
+      }
+
+      .quick-app-empty {
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px dashed var(--stroke);
+        color: var(--muted);
       }
 
       .btn-inline {
@@ -306,7 +373,7 @@
         padding: 10px 10px;
         border-radius: 12px;
         border: 1px solid var(--stroke);
-        background: rgba(0, 0, 0, 0.22);
+        background: var(--field);
         color: var(--text);
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
           "Liberation Mono", "Courier New", monospace;
@@ -316,7 +383,7 @@
 
       textarea:focus {
         outline: none;
-        border-color: rgba(255, 255, 255, 0.22);
+        border-color: var(--focus);
       }
 
       @media (min-width: 700px) {
@@ -330,9 +397,9 @@
           align-items: end;
         }
 
+        .quick-app-primary,
         .quick-app-row {
           grid-template-columns: minmax(0, 1fr) 118px;
-          align-items: end;
         }
 
         header {
@@ -348,7 +415,7 @@
         padding: 12px 12px;
         border-radius: 12px;
         border: 1px solid var(--stroke);
-        background: rgba(0, 0, 0, 0.55);
+        background: var(--toast-bg);
         color: var(--text);
         font-size: 13px;
         opacity: 0;
@@ -521,45 +588,17 @@
               </button>
             </div>
             <div class="quick-apps">
-              <div class="quick-app-row">
-                <label>
-                  <div class="label">Слот 1</div>
-                  <select id="quickAppSelect1" onchange="handleQuickAppSelection(0)"></select>
-                </label>
-                <button class="btn" id="quickAppBtn1" type="button" onclick="openQuickApp(0)">
-                  Открыть
-                </button>
+              <div class="quick-app-group">
+                <div class="label">Закрепленные</div>
+                <div id="pinnedAppsList"></div>
               </div>
-              <div class="quick-app-row">
-                <label>
-                  <div class="label">Слот 2</div>
-                  <select id="quickAppSelect2" onchange="handleQuickAppSelection(1)"></select>
-                </label>
-                <button class="btn" id="quickAppBtn2" type="button" onclick="openQuickApp(1)">
-                  Открыть
-                </button>
-              </div>
-              <div class="quick-app-row">
-                <label>
-                  <div class="label">Слот 3</div>
-                  <select id="quickAppSelect3" onchange="handleQuickAppSelection(2)"></select>
-                </label>
-                <button class="btn" id="quickAppBtn3" type="button" onclick="openQuickApp(2)">
-                  Открыть
-                </button>
-              </div>
-              <div class="quick-app-row">
-                <label>
-                  <div class="label">Слот 4</div>
-                  <select id="quickAppSelect4" onchange="handleQuickAppSelection(3)"></select>
-                </label>
-                <button class="btn" id="quickAppBtn4" type="button" onclick="openQuickApp(3)">
-                  Открыть
-                </button>
+              <div class="quick-app-group">
+                <div class="label">Недавние</div>
+                <div id="recentAppsList"></div>
               </div>
             </div>
             <div class="sub" id="quickAppsStatus">
-              Пока доступны только недавно открытые приложения.
+              Запусти приложение на ПК, чтобы оно появилось здесь.
             </div>
           </div>
 
@@ -644,6 +683,29 @@
 
           <div style="height: 12px"></div>
 
+          <div id="appearanceSection">
+            <div class="section-title" id="appearanceTitle">Интерфейс</div>
+            <div class="row2">
+              <label>
+                <div class="label" id="themeLabel">Тема</div>
+                <select id="themeSelect" onchange="changeTheme(this.value)">
+                  <option value="dark" id="themeOptionDark">Темная</option>
+                  <option value="light" id="themeOptionLight">Светлая</option>
+                </select>
+              </label>
+              <label>
+                <div class="label" id="languageLabel">Язык</div>
+                <select id="languageSelect" onchange="changeLanguage(this.value)">
+                  <option value="ru" id="languageOptionRu">Русский</option>
+                  <option value="en" id="languageOptionEn">English</option>
+                </select>
+              </label>
+            </div>
+            <div class="sub" id="appearanceSub">Сохраняется на этом устройстве.</div>
+          </div>
+
+          <div style="height: 12px"></div>
+
           <div>
             <div class="section-title">PIN</div>
             <div class="row2">
@@ -682,6 +744,23 @@
             </div>
             <div class="sub">После смены нужно подключиться заново.</div>
           </div>
+
+          <div style="height: 12px"></div>
+
+          <div>
+            <div class="section-title">Сброс приложения</div>
+            <div class="sub">
+              Удалит сохраненный PIN и перезапустит приложение. После запуска нужно будет пройти QR-настройку заново.
+            </div>
+            <div
+              class="controls"
+              style="grid-template-columns: 1fr; margin-top: 10px"
+            >
+              <button class="btn btn-danger" type="button" onclick="restartAppClean()">
+                Сбросить и перезапустить
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -706,8 +785,7 @@
         Number(runtimeConfig.offlineRetryMaxMs || 30000),
       );
       const pairTokenStorageKey = "pcRemotePairToken";
-      const quickAppsStorageKey = "pcRemoteQuickApps";
-      const quickAppSlotCount = 4;
+      const recentAppPreviewCount = 4;
 
       let token = "";
       let pairToken = "";
@@ -719,7 +797,7 @@
       let requiresPasswordSetup = false;
       let logCursor = 0;
       let recentApps = [];
-      let quickAppSelections = [];
+      let pinnedApps = [];
 
       let pollTimer = null;
       let toastTimer = null;
@@ -730,9 +808,366 @@
       let volumeReqId = 0;
       let queuedVolumeSteps = 0;
       let volumeStepBusy = false;
+      let currentTheme = normalizeTheme(localStorage.getItem("pcRemoteTheme"));
+      let currentLanguage = normalizeLanguage(localStorage.getItem("pcRemoteLanguage"));
+      let lastOfflineRetryMs = offlineRetryMinMs;
+      let lastInfoData = null;
+      let lastAudioDevicesData = null;
+
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+      const themeStorageKey = "pcRemoteTheme";
+      const languageStorageKey = "pcRemoteLanguage";
+      const themeColors = {
+        dark: "#111318",
+        light: "#eef2f8",
+      };
+      const translations = {
+        ru: {
+          metaTitle: "Пульт ПК",
+          appTitle: "Пульт ПК",
+          apiHint: "Веб: http://{host}:{port} | v{version}",
+          authTitle: "Подключение",
+          pinLabel: "PIN",
+          connect: "Подключиться",
+          setupTitle: "Первый запуск",
+          setupSub: "QR подтвержден. Задай PIN из {count} цифр для обычного входа по IP.",
+          setupBlockedTitle: "Нужна первичная настройка",
+          setupBlockedSub: "Открой QR-код на ПК и перейди по нему с телефона, чтобы задать PIN из {count} цифр.",
+          save: "Сохранить",
+          disconnected: "Не подключено",
+          disconnect: "Отключиться",
+          tabMain: "Основное",
+          tabInfo: "Инфо",
+          tabSettings: "Настройки",
+          volumeTitle: "Громкость",
+          volumeMuted: "Без звука",
+          muteOn: "Включить звук",
+          muteOff: "Выключить звук",
+          mediaTitle: "Медиа",
+          mediaPrev: "Пред.",
+          mediaPause: "Пауза",
+          mediaNext: "След.",
+          appsTitle: "Приложения",
+          refresh: "Обновить",
+          pinnedTitle: "Закрепленные",
+          recentTitle: "Недавние",
+          quickAppLabel: "Приложение",
+          quickAppPinnedLabel: "Закреплено",
+          quickAppRecentLabel: "Недавнее",
+          quickAppLastLabel: "Последнее",
+          quickAppsEmptyPinned: "Закрепи приложение из списка ниже, и оно останется здесь.",
+          quickAppsEmptyRecent: "Недавних приложений пока нет.",
+          quickAppsStatusEmpty: "Запусти приложение на ПК, чтобы оно появилось здесь.",
+          quickAppsStatusSummary: "Закреплено: {pinned} • Недавних: {recent}.",
+          appOpen: "Открыть",
+          appMinimize: "Свернуть",
+          appClose: "Закрыть",
+          appPin: "Закрепить",
+          appUnpin: "Убрать",
+          powerTitle: "Питание",
+          reboot: "Перезагрузить ПК",
+          shutdown: "Выключить ПК",
+          systemTitle: "Система",
+          networkTitle: "Сеть",
+          audioTitle: "Вывод звука",
+          logsTitle: "Логи",
+          appearanceTitle: "Интерфейс",
+          themeLabel: "Тема",
+          themeDark: "Темная",
+          themeLight: "Светлая",
+          languageLabel: "Язык",
+          languageRu: "Русский",
+          languageEn: "English",
+          appearanceSub: "Сохраняется на этом устройстве.",
+          settingsPinTitle: "PIN",
+          currentPinLabel: "Текущий PIN",
+          newPinLabel: "Новый PIN",
+          changePin: "Сменить PIN",
+          changePinSub: "После смены нужно подключиться заново.",
+          resetTitle: "Сброс приложения",
+          resetSub: "Удалит сохраненный PIN и перезапустит приложение. После запуска нужно будет пройти QR-настройку заново.",
+          resetBtn: "Сбросить и перезапустить",
+          statusConnected: "Подключено",
+          statusOffline: "Оффлайн",
+          statusOfflineRetry: "API недоступен, повтор через {seconds}с",
+          sessionExpired: "Сессия истекла",
+          sessionExpiredReconnect: "Сессия истекла, подключись заново",
+          connectionRestored: "Соединение восстановлено",
+          enterPin: "Введи PIN",
+          finishSetupThroughQr: "Сначала заверши настройку через QR",
+          wrongPin: "Неверный PIN",
+          connectError: "Ошибка подключения",
+          pinDigitsExact: "PIN должен быть из {count} цифр",
+          newPinDigitsExact: "Новый PIN должен быть из {count} цифр",
+          pinDigitsPlaceholder: "{count} цифры",
+          reopenQr: "Открой QR заново",
+          qrExpired: "QR-токен истек, открой новый",
+          setupError: "Ошибка первичной настройки",
+          fillBothPinFields: "Заполни оба поля",
+          currentPinWrong: "Неверный текущий PIN",
+          pinChanged: "PIN изменен",
+          pinChangeError: "Ошибка смены PIN",
+          cleanRestartConfirm: "Приложение удалит PIN и перезапустится. После запуска понадобится QR-настройка заново. Продолжить?",
+          appRestarting: "Приложение перезапускается",
+          appRestartFailed: "Не удалось перезапустить приложение",
+          commandSent: "Команда отправлена",
+          shutdownConfirm: "Точно выключить ПК?",
+          shutdownError: "Ошибка выключения",
+          rebootConfirm: "Точно перезагрузить ПК?",
+          rebootError: "Ошибка перезагрузки",
+          mediaError: "Ошибка медиа",
+          volumeChangeFailed: "Не удалось изменить громкость",
+          muteToggleFailed: "Не удалось переключить звук",
+          appsLoadFailed: "Не удалось загрузить список приложений",
+          appUnavailable: "Приложение недоступно",
+          openNoRecent: "Сначала открой нужное приложение на ПК",
+          onlyExe: "Поддерживаются только .exe",
+          appNotSuitableOpen: "Это служебный или системный процесс, его лучше не запускать отсюда",
+          openingApp: "Открываю: {name}",
+          openingAppGeneric: "Открываю приложение",
+          openAppFailed: "Не удалось открыть приложение",
+          appWindowNotFound: "Окно приложения не найдено",
+          appNotSuitableControl: "Это приложение нельзя управлять отсюда",
+          appActionFailed: "Не удалось выполнить действие",
+          appMinimized: "Свернуто: {name}",
+          appClosing: "Закрываю: {name}",
+          appActionFailedGeneric: "Не удалось выполнить действие с приложением",
+          appMissingOnPc: "Приложение больше недоступно на ПК",
+          appNotSuitablePin: "Служебные и системные процессы не закрепляются",
+          pinChangeFailed: "Не удалось изменить закрепление",
+          appPinned: "Закреплено: {name}",
+          appUnpinned: "Убрано: {name}",
+          appPinFailed: "Не удалось закрепить приложение",
+          appUnpinFailed: "Не удалось убрать приложение",
+          noBattery: "Батарея: нет",
+          batteryLabel: "Батарея",
+          batteryFromAc: "от сети",
+          batteryFromBattery: "от батареи",
+          uptimeLabel: "Аптайм",
+          hostLabel: "Хост",
+          primaryLabel: "Основной",
+          interfacesLabel: "Интерфейсы",
+          currentLabel: "Текущее",
+          deviceLabel: "Устройство",
+          switch: "Переключить",
+          refreshList: "Обновить список",
+          chooseOutputDevice: "Выбери устройство вывода.",
+          audioDevicesFound: "Найдено устройств вывода: {count}.",
+          audioDevicesNone: "Активные устройства вывода не найдены.",
+          audioDevicesLoadFailed: "Не удалось загрузить список устройств.",
+          outputSwitchedTo: "Переключено на {name}.",
+          outputChanged: "Устройство вывода изменено.",
+          outputSwitchFailed: "Не удалось переключить устройство.",
+          outputSwitchError: "Ошибка смены устройства",
+          currentDeviceSuffix: "текущее",
+        },
+        en: {
+          metaTitle: "PC Remote",
+          appTitle: "PC Remote",
+          apiHint: "Web: http://{host}:{port} | v{version}",
+          authTitle: "Connect",
+          pinLabel: "PIN",
+          connect: "Connect",
+          setupTitle: "First Launch",
+          setupSub: "QR confirmed. Set a {count}-digit PIN for regular IP login.",
+          setupBlockedTitle: "Initial Setup Required",
+          setupBlockedSub: "Open the QR code on your PC and continue from your phone to set a {count}-digit PIN.",
+          save: "Save",
+          disconnected: "Disconnected",
+          disconnect: "Disconnect",
+          tabMain: "Main",
+          tabInfo: "Info",
+          tabSettings: "Settings",
+          volumeTitle: "Volume",
+          volumeMuted: "Muted",
+          muteOn: "Unmute",
+          muteOff: "Mute",
+          mediaTitle: "Media",
+          mediaPrev: "Prev",
+          mediaPause: "Pause",
+          mediaNext: "Next",
+          appsTitle: "Apps",
+          refresh: "Refresh",
+          pinnedTitle: "Pinned",
+          recentTitle: "Recent",
+          quickAppLabel: "App",
+          quickAppPinnedLabel: "Pinned",
+          quickAppRecentLabel: "Recent",
+          quickAppLastLabel: "Last used",
+          quickAppsEmptyPinned: "Pin an app from the list below and it will stay here.",
+          quickAppsEmptyRecent: "No recent apps yet.",
+          quickAppsStatusEmpty: "Launch an app on your PC to make it appear here.",
+          quickAppsStatusSummary: "Pinned: {pinned} • Recent: {recent}.",
+          appOpen: "Open",
+          appMinimize: "Minimize",
+          appClose: "Close",
+          appPin: "Pin",
+          appUnpin: "Remove",
+          powerTitle: "Power",
+          reboot: "Restart PC",
+          shutdown: "Shut Down PC",
+          systemTitle: "System",
+          networkTitle: "Network",
+          audioTitle: "Audio Output",
+          logsTitle: "Logs",
+          appearanceTitle: "Appearance",
+          themeLabel: "Theme",
+          themeDark: "Dark",
+          themeLight: "Light",
+          languageLabel: "Language",
+          languageRu: "Russian",
+          languageEn: "English",
+          appearanceSub: "Saved on this device.",
+          settingsPinTitle: "PIN",
+          currentPinLabel: "Current PIN",
+          newPinLabel: "New PIN",
+          changePin: "Change PIN",
+          changePinSub: "You'll need to connect again after changing it.",
+          resetTitle: "Reset App",
+          resetSub: "Deletes the saved PIN and restarts the app. After launch you'll need to go through QR setup again.",
+          resetBtn: "Reset and Restart",
+          statusConnected: "Connected",
+          statusOffline: "Offline",
+          statusOfflineRetry: "API unavailable, retry in {seconds}s",
+          sessionExpired: "Session expired",
+          sessionExpiredReconnect: "Session expired, connect again",
+          connectionRestored: "Connection restored",
+          enterPin: "Enter PIN",
+          finishSetupThroughQr: "Finish setup via QR first",
+          wrongPin: "Wrong PIN",
+          connectError: "Connection error",
+          pinDigitsExact: "PIN must be {count} digits",
+          newPinDigitsExact: "New PIN must be {count} digits",
+          pinDigitsPlaceholder: "{count} digits",
+          reopenQr: "Open the QR again",
+          qrExpired: "QR token expired, open a new one",
+          setupError: "Initial setup error",
+          fillBothPinFields: "Fill in both fields",
+          currentPinWrong: "Wrong current PIN",
+          pinChanged: "PIN changed",
+          pinChangeError: "PIN change error",
+          cleanRestartConfirm: "The app will remove the PIN and restart. You'll need QR setup again after launch. Continue?",
+          appRestarting: "App is restarting",
+          appRestartFailed: "Failed to restart the app",
+          commandSent: "Command sent",
+          shutdownConfirm: "Shut down the PC?",
+          shutdownError: "Shutdown error",
+          rebootConfirm: "Restart the PC?",
+          rebootError: "Restart error",
+          mediaError: "Media error",
+          volumeChangeFailed: "Failed to change volume",
+          muteToggleFailed: "Failed to toggle mute",
+          appsLoadFailed: "Failed to load app list",
+          appUnavailable: "App unavailable",
+          openNoRecent: "Open the app on your PC first",
+          onlyExe: "Only .exe apps are supported",
+          appNotSuitableOpen: "This is a system or background process, so it should not be launched from here",
+          openingApp: "Opening: {name}",
+          openingAppGeneric: "Opening app",
+          openAppFailed: "Failed to open the app",
+          appWindowNotFound: "App window not found",
+          appNotSuitableControl: "This app can't be controlled from here",
+          appActionFailed: "Failed to run the action",
+          appMinimized: "Minimized: {name}",
+          appClosing: "Closing: {name}",
+          appActionFailedGeneric: "Failed to control the app",
+          appMissingOnPc: "The app is no longer available on this PC",
+          appNotSuitablePin: "System and service processes can't be pinned",
+          pinChangeFailed: "Failed to update the pinned state",
+          appPinned: "Pinned: {name}",
+          appUnpinned: "Removed: {name}",
+          appPinFailed: "Failed to pin the app",
+          appUnpinFailed: "Failed to remove the app",
+          noBattery: "Battery: not present",
+          batteryLabel: "Battery",
+          batteryFromAc: "plugged in",
+          batteryFromBattery: "battery",
+          uptimeLabel: "Uptime",
+          hostLabel: "Host",
+          primaryLabel: "Primary",
+          interfacesLabel: "Interfaces",
+          currentLabel: "Current",
+          deviceLabel: "Device",
+          switch: "Switch",
+          refreshList: "Refresh List",
+          chooseOutputDevice: "Choose an output device.",
+          audioDevicesFound: "Output devices found: {count}.",
+          audioDevicesNone: "No active output devices found.",
+          audioDevicesLoadFailed: "Failed to load device list.",
+          outputSwitchedTo: "Switched to {name}.",
+          outputChanged: "Output device changed.",
+          outputSwitchFailed: "Failed to switch the device.",
+          outputSwitchError: "Device switch error",
+          currentDeviceSuffix: "current",
+        },
+      };
 
       function $(id) {
         return document.getElementById(id);
+      }
+
+      function query(selector, root = document) {
+        return root.querySelector(selector);
+      }
+
+      function queryAll(selector, root = document) {
+        return Array.from(root.querySelectorAll(selector));
+      }
+
+      function setText(target, value) {
+        const element = typeof target === "string" ? $(target) : target;
+        if (element) {
+          element.textContent = value;
+        }
+      }
+
+      function setPlaceholder(id, value) {
+        const element = $(id);
+        if (element) {
+          element.placeholder = value;
+        }
+      }
+
+      function normalizeTheme(value) {
+        return value === "light" ? "light" : "dark";
+      }
+
+      function normalizeLanguage(value) {
+        return value === "en" ? "en" : "ru";
+      }
+
+      function t(key, vars = {}) {
+        const dictionary = translations[currentLanguage] || translations.ru;
+        let template = dictionary[key];
+        if (typeof template !== "string") {
+          template = translations.ru[key];
+        }
+        if (typeof template !== "string") {
+          return key;
+        }
+        return template.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ""));
+      }
+
+      function updateApiHint() {
+        setText("apiHint", t("apiHint", { host, port: webPort, version: appVersion }));
+      }
+
+      function applyTheme(value, options = {}) {
+        currentTheme = normalizeTheme(value);
+        document.documentElement.dataset.theme = currentTheme;
+        if (metaThemeColor) {
+          metaThemeColor.content = themeColors[currentTheme];
+        }
+        if ($("themeSelect")) {
+          $("themeSelect").value = currentTheme;
+        }
+        if (options.persist !== false) {
+          localStorage.setItem(themeStorageKey, currentTheme);
+        }
+      }
+
+      function changeTheme(value) {
+        applyTheme(value);
       }
 
       function isValidPin(value) {
@@ -747,34 +1182,6 @@
         sessionStorage.setItem(pairTokenStorageKey, value);
       }
 
-      function loadQuickAppSelections() {
-        const empty = Array.from({ length: quickAppSlotCount }, () => "");
-        try {
-          const raw = localStorage.getItem(quickAppsStorageKey);
-          const parsed = JSON.parse(raw || "[]");
-          if (!Array.isArray(parsed)) return empty;
-          return empty.map((_, index) => String(parsed[index] || ""));
-        } catch {
-          return empty;
-        }
-      }
-
-      function saveQuickAppSelections() {
-        try {
-          localStorage.setItem(quickAppsStorageKey, JSON.stringify(quickAppSelections));
-        } catch {
-          // ignore
-        }
-      }
-
-      function quickAppSelectId(index) {
-        return `quickAppSelect${index + 1}`;
-      }
-
-      function quickAppButtonId(index) {
-        return `quickAppBtn${index + 1}`;
-      }
-
       function appNameFromPath(path) {
         const parts = String(path || "").split(/[\\/]+/);
         return parts[parts.length - 1] || path;
@@ -785,74 +1192,293 @@
           .map((item) => ({
             name: String((item || {}).name || "").trim(),
             path: String((item || {}).path || "").trim(),
+            args: String((item || {}).args || "").trim(),
+            aumid: String((item || {}).aumid || "").trim(),
           }))
           .filter((item) => item.path);
       }
 
-      function syncQuickAppButtonState(index) {
-        const button = $(quickAppButtonId(index));
-        const select = $(quickAppSelectId(index));
-        if (!button || !select) return;
-        button.disabled = !select.value;
+      function appLabel(app) {
+        if (!app) return "";
+        return String(app.name || "").trim() || appNameFromPath(app.path);
       }
 
-      function renderQuickAppOptions() {
-        const recentPaths = new Set(recentApps.map((item) => item.path));
-        const status = $("quickAppsStatus");
+      function appPathKey(path) {
+        return String(path || "").trim().toLowerCase();
+      }
 
-        for (let index = 0; index < quickAppSlotCount; index += 1) {
-          const select = $(quickAppSelectId(index));
-          if (!select) continue;
+      function appLaunchKey(app) {
+        if (!app) return "";
+        const aumid = String(app.aumid || "").trim().toLowerCase();
+        if (aumid) return `aumid:${aumid}`;
+        const args = String(app.args || "").trim().toLowerCase();
+        return `path:${appPathKey(app.path)}|args:${args}`;
+      }
 
-          const selectedPath = String(quickAppSelections[index] || "");
-          const options = selectedPath && !recentPaths.has(selectedPath)
-            ? [{ path: selectedPath, name: `${appNameFromPath(selectedPath)} (сохранено)` }, ...recentApps]
-            : recentApps.slice();
+      function isPinnedApp(app) {
+        const key = appLaunchKey(app);
+        return !!key && pinnedApps.some((item) => appLaunchKey(item) === key);
+      }
 
-          select.innerHTML = "";
+      function applyAppsPayload(data) {
+        recentApps = normalizeRecentApps((data || {}).apps);
+        pinnedApps = normalizeRecentApps((data || {}).pinned_apps);
+      }
 
-          const placeholder = document.createElement("option");
-          placeholder.value = "";
-          placeholder.textContent = recentApps.length
-            ? "Выбери приложение"
-            : "Недавних приложений нет";
-          select.appendChild(placeholder);
+      function renderInfoPlaceholders() {
+        $("cpuPill").textContent = "CPU: --%";
+        $("ramPill").textContent = "RAM: --%";
+        $("uptimePill").textContent = `${t("uptimeLabel")}: --`;
+        $("batteryPill").textContent = `${t("batteryLabel")}: --`;
+        $("ipPill").textContent = "IP: --";
+        $("hostPill").textContent = `${t("hostLabel")}: --`;
+        $("networkPrimaryText").textContent = `${t("primaryLabel")}: --`;
+        $("networkInterfacesText").textContent = `${t("interfacesLabel")}: --`;
+        $("audioOutputPill").textContent = `${t("currentLabel")}: --`;
+      }
 
-          for (const app of options) {
-            const option = document.createElement("option");
-            option.value = app.path;
-            option.textContent = app.name || appNameFromPath(app.path);
-            select.appendChild(option);
-          }
+      function refreshConnectionText() {
+        if (apiOffline) {
+          const seconds = Math.max(1, Math.ceil(lastOfflineRetryMs / 1000));
+          $("statusTitle").textContent = t("statusOffline");
+          $("statusSub").textContent = t("statusOfflineRetry", { seconds });
+          return;
+        }
+        if (token) {
+          setConnectedState();
+          return;
+        }
+        $("statusTitle").textContent = t("disconnected");
+        $("statusSub").textContent = "";
+      }
 
-          const hasSelectedValue = options.some((item) => item.path === selectedPath);
-          select.value = hasSelectedValue ? selectedPath : "";
-          quickAppSelections[index] = select.value;
-          syncQuickAppButtonState(index);
+      function applyLocalization() {
+        document.documentElement.lang = currentLanguage;
+        document.title = t("metaTitle");
+        updateApiHint();
+
+        setText(query("header h1"), t("appTitle"));
+        setText(query("#auth .section-title"), t("authTitle"));
+        setText($("password").previousElementSibling, t("pinLabel"));
+        setText("connectBtn", t("connect"));
+
+        setText(query("#setup .section-title"), t("setupTitle"));
+        setText(query("#setup .sub"), t("setupSub", { count: pinLength }));
+        setText($("setupPassword").previousElementSibling, t("newPinLabel"));
+        setText("setupBtn", t("save"));
+
+        setText(query("#setupBlocked .section-title"), t("setupBlockedTitle"));
+        setText(query("#setupBlocked .sub"), t("setupBlockedSub", { count: pinLength }));
+
+        setText(query("#panel .statusline button"), t("disconnect"));
+        setText("tabBtnMain", t("tabMain"));
+        setText("tabBtnInfo", t("tabInfo"));
+        setText("tabBtnSettings", t("tabSettings"));
+
+        const mainTitles = queryAll("#tabMain .section-title");
+        setText(mainTitles[0], t("volumeTitle"));
+        setText(mainTitles[1], t("mediaTitle"));
+        setText(mainTitles[2], t("appsTitle"));
+        setText(mainTitles[3], t("powerTitle"));
+
+        const mainControls = queryAll("#tabMain .controls");
+        const mediaButtons = mainControls[1] ? Array.from(mainControls[1].querySelectorAll("button")) : [];
+        setText(mediaButtons[0], t("mediaPrev"));
+        setText(mediaButtons[1], t("mediaPause"));
+        setText(mediaButtons[2], t("mediaNext"));
+        setText(query("#tabMain .volhead button"), t("refresh"));
+
+        setText($("pinnedAppsList").previousElementSibling, t("pinnedTitle"));
+        setText($("recentAppsList").previousElementSibling, t("recentTitle"));
+
+        const powerButtons = queryAll("#tabMain .power-controls button");
+        setText(powerButtons[0], t("reboot"));
+        setText(powerButtons[1], t("shutdown"));
+
+        const infoTitles = queryAll("#tabInfo .section-title");
+        setText(infoTitles[0], t("systemTitle"));
+        setText(infoTitles[1], t("networkTitle"));
+        setText(infoTitles[2], t("audioTitle"));
+        setText($("audioDeviceSelect").previousElementSibling, t("deviceLabel"));
+        setText(query("#tabInfo .row button"), t("switch"));
+        setText(query("#tabInfo .controls button"), t("refreshList"));
+
+        const settingsTitles = queryAll("#tabSettings .section-title");
+        setText(settingsTitles[0], t("logsTitle"));
+        setText(query("#tabSettings > div:first-child .controls button"), t("refresh"));
+        setText("appearanceTitle", t("appearanceTitle"));
+        setText("themeLabel", t("themeLabel"));
+        setText("themeOptionDark", t("themeDark"));
+        setText("themeOptionLight", t("themeLight"));
+        setText("languageLabel", t("languageLabel"));
+        setText("languageOptionRu", t("languageRu"));
+        setText("languageOptionEn", t("languageEn"));
+        setText("appearanceSub", t("appearanceSub"));
+        setText(settingsTitles[2], t("settingsPinTitle"));
+        setText($("currentPassword").previousElementSibling, t("currentPinLabel"));
+        setText($("newPassword").previousElementSibling, t("newPinLabel"));
+        setText(query('button[onclick="changePassword()"]'), t("changePin"));
+        setText(query('button[onclick="changePassword()"]').closest(".controls").nextElementSibling, t("changePinSub"));
+        setText(settingsTitles[3], t("resetTitle"));
+        setText(query('button[onclick="restartAppClean()"]').closest(".controls").previousElementSibling, t("resetSub"));
+        setText(query('button[onclick="restartAppClean()"]'), t("resetBtn"));
+
+        if ($("languageSelect")) {
+          $("languageSelect").value = currentLanguage;
         }
 
-        saveQuickAppSelections();
-        status.textContent = recentApps.length
-          ? `Недавних приложений найдено: ${recentApps.length}.`
-          : "Недавно открытые приложения не найдены.";
+        configurePinInputs();
+        updateVolumeUI();
+        renderRecentApps();
+        refreshConnectionText();
+        if (lastInfoData) {
+          renderStats(lastInfoData);
+        } else {
+          renderInfoPlaceholders();
+        }
+        if (lastAudioDevicesData) {
+          renderAudioDevicesState(lastAudioDevicesData);
+        } else {
+          $("audioDeviceStatus").textContent = t("chooseOutputDevice");
+        }
       }
 
-      function handleQuickAppSelection(index) {
-        const select = $(quickAppSelectId(index));
-        quickAppSelections[index] = select ? String(select.value || "") : "";
-        saveQuickAppSelections();
-        syncQuickAppButtonState(index);
+      function changeLanguage(value) {
+        currentLanguage = normalizeLanguage(value);
+        localStorage.setItem(languageStorageKey, currentLanguage);
+        applyLocalization();
+      }
+
+      function appendQuickAppEmpty(container, text) {
+        if (!container) return;
+        const empty = document.createElement("div");
+        empty.className = "quick-app-empty";
+        empty.textContent = text;
+        container.appendChild(empty);
+      }
+
+      function createQuickAppRow(app, options = {}) {
+        const row = document.createElement("div");
+        row.className = "quick-app-row";
+
+        const meta = document.createElement("div");
+        meta.className = "quick-app-meta";
+
+        const label = document.createElement("div");
+        label.className = "label";
+        label.textContent = String(options.label || t("quickAppLabel"));
+
+        const name = document.createElement("div");
+        name.className = "quick-app-name";
+        name.textContent = appLabel(app);
+
+        meta.appendChild(label);
+        meta.appendChild(name);
+
+        const actions = document.createElement("div");
+        actions.className = "quick-app-actions";
+
+        const openButton = document.createElement("button");
+        openButton.className = "btn";
+        openButton.type = "button";
+        openButton.textContent = t("appOpen");
+        openButton.onclick = () => {
+          void openApp(app, openButton);
+        };
+        actions.appendChild(openButton);
+
+        const minimizeButton = document.createElement("button");
+        minimizeButton.className = "btn btn-inline";
+        minimizeButton.type = "button";
+        minimizeButton.textContent = t("appMinimize");
+        minimizeButton.onclick = () => {
+          void appWindowAction(app, "minimize", minimizeButton);
+        };
+        actions.appendChild(minimizeButton);
+
+        const closeButton = document.createElement("button");
+        closeButton.className = "btn btn-danger btn-inline";
+        closeButton.type = "button";
+        closeButton.textContent = t("appClose");
+        closeButton.onclick = () => {
+          void appWindowAction(app, "close", closeButton);
+        };
+        actions.appendChild(closeButton);
+
+        if (options.allowPin !== false) {
+          const pinButton = document.createElement("button");
+          pinButton.className = "btn btn-inline";
+          pinButton.type = "button";
+          pinButton.textContent = isPinnedApp(app) ? t("appUnpin") : t("appPin");
+          pinButton.onclick = () => {
+            void togglePinnedApp(app, pinButton);
+          };
+          actions.appendChild(pinButton);
+        }
+
+        row.appendChild(meta);
+        row.appendChild(actions);
+        return row;
+      }
+
+      function renderRecentApps() {
+        const pinnedAppsList = $("pinnedAppsList");
+        const recentAppsList = $("recentAppsList");
+        const status = $("quickAppsStatus");
+        const unpinnedRecentApps = recentApps.filter((app) => !isPinnedApp(app));
+
+        if (pinnedAppsList) {
+          pinnedAppsList.innerHTML = "";
+          if (pinnedApps.length) {
+            for (const app of pinnedApps) {
+              pinnedAppsList.appendChild(createQuickAppRow(app, { label: t("quickAppPinnedLabel") }));
+            }
+          } else {
+            appendQuickAppEmpty(pinnedAppsList, t("quickAppsEmptyPinned"));
+          }
+        }
+        if (recentAppsList) {
+          recentAppsList.innerHTML = "";
+          const visibleRecentApps = unpinnedRecentApps.slice(0, recentAppPreviewCount);
+          if (visibleRecentApps.length) {
+            for (const [index, app] of visibleRecentApps.entries()) {
+              recentAppsList.appendChild(
+                createQuickAppRow(app, {
+                  label: index === 0 ? t("quickAppLastLabel") : t("quickAppRecentLabel"),
+                }),
+              );
+            }
+          } else {
+            appendQuickAppEmpty(recentAppsList, t("quickAppsEmptyRecent"));
+          }
+        }
+
+        if (status) {
+          if (pinnedApps.length || unpinnedRecentApps.length) {
+            status.textContent = t("quickAppsStatusSummary", {
+              pinned: pinnedApps.length,
+              recent: unpinnedRecentApps.length,
+            });
+          } else {
+            status.textContent = t("quickAppsStatusEmpty");
+          }
+        }
       }
 
       function configurePinInputs() {
-        const ids = ["password", "setupPassword", "currentPassword", "newPassword"];
-        const placeholder = "•".repeat(pinLength);
-        for (const id of ids) {
+        for (const id of ["password", "currentPassword"]) {
           const input = $(id);
           if (!input) continue;
           input.maxLength = pinLength;
           input.pattern = `\\d{${pinLength}}`;
-          input.placeholder = placeholder;
+          input.placeholder = "•".repeat(pinLength);
+        }
+        for (const id of ["setupPassword", "newPassword"]) {
+          const input = $(id);
+          if (!input) continue;
+          input.maxLength = pinLength;
+          input.pattern = `\\d{${pinLength}}`;
+          input.placeholder = t("pinDigitsPlaceholder", { count: pinLength });
         }
       }
 
@@ -884,17 +1510,18 @@
 
       function setConnectedState() {
         apiOffline = false;
-        $("statusTitle").textContent = "Подключено";
+        $("statusTitle").textContent = t("statusConnected");
         $("statusSub").textContent = connectedStatusText();
         setDot(true);
       }
 
       function setOfflineState(retryMs) {
         apiOffline = true;
+        lastOfflineRetryMs = retryMs;
         if ($("panel").hidden) return;
         const seconds = Math.max(1, Math.ceil(retryMs / 1000));
-        $("statusTitle").textContent = "Оффлайн";
-        $("statusSub").textContent = `API unavailable, retry in ${seconds}s`;
+        $("statusTitle").textContent = t("statusOffline");
+        $("statusSub").textContent = t("statusOfflineRetry", { seconds });
         setDot(false);
       }
 
@@ -925,9 +1552,9 @@
 
       function updateVolumeUI(opts = {}) {
         const syncRange = opts.syncRange !== false;
-        $("volumePill").textContent = muted ? "Без звука" : `${currentVolume}%`;
+        $("volumePill").textContent = muted ? t("volumeMuted") : `${currentVolume}%`;
         if (syncRange) $("volumeRange").value = String(currentVolume);
-        $("muteBtn").textContent = muted ? "Включить звук" : "Выключить звук";
+        $("muteBtn").textContent = muted ? t("muteOn") : t("muteOff");
       }
 
       function rememberVolumeState() {
@@ -980,62 +1607,158 @@
         try {
           const res = await apiPost("/apps/recent", {});
           if (res.status === 403 || res.status === 409) {
-            if (!silent) toast("Сессия истекла");
+            if (!silent) toast(t("sessionExpired"));
             await disconnect(true);
             return;
           }
           if (!res.ok) throw new Error();
           const data = await res.json();
-          recentApps = normalizeRecentApps(data.apps);
-          renderQuickAppOptions();
+          applyAppsPayload(data);
+          renderRecentApps();
         } catch {
           recentApps = [];
-          renderQuickAppOptions();
+          pinnedApps = [];
+          renderRecentApps();
           if (!silent) {
-            toast("Не удалось загрузить список приложений");
+            toast(t("appsLoadFailed"));
           }
         }
       }
 
-      async function openQuickApp(index) {
-        const path = String(quickAppSelections[index] || "");
-        if (!path) {
-          toast("Выбери приложение");
-          return;
-        }
-
-        const button = $(quickAppButtonId(index));
+      async function openApp(app = null, button = null) {
         if (button) button.disabled = true;
 
         try {
-          const res = await apiPost("/apps/open", { path });
+          const payload = app && app.path ? { path: app.path } : {};
+          if (app && app.name) payload.name = app.name;
+          if (app && app.args) payload.args = app.args;
+          if (app && app.aumid) payload.aumid = app.aumid;
+          const res = await apiPost("/apps/open", payload);
           if (res.status === 403 || res.status === 409) {
-            toast("Сессия истекла");
+            toast(t("sessionExpired"));
             await disconnect(true);
             return;
           }
           if (res.status === 400) {
             const data = await res.json().catch(() => ({}));
             const detail = String(data.detail || "");
-            if (detail === "only executable applications are supported") {
-              toast("Поддерживаются только .exe");
+            if (detail === "no recently used applications found") {
+              toast(t("openNoRecent"));
+            } else if (detail === "only executable applications are supported") {
+              toast(t("onlyExe"));
+            } else if (detail === "application is not suitable for quick launch") {
+              toast(t("appNotSuitableOpen"));
             } else {
-              toast("Приложение недоступно");
+              toast(t("appUnavailable"));
             }
             return;
           }
           if (!res.ok) throw new Error();
 
           const data = await res.json();
-          if (Array.isArray(data.apps)) {
-            recentApps = normalizeRecentApps(data.apps);
-            renderQuickAppOptions();
-          }
-          toast("Приложение запущено");
+          applyAppsPayload(data);
+          const launchedApp = normalizeRecentApps([data.launched_app])[0] || recentApps[0] || null;
+          toast(
+            launchedApp
+              ? t("openingApp", { name: appLabel(launchedApp) })
+              : t("openingAppGeneric"),
+          );
         } catch {
-          toast("Не удалось открыть приложение");
+          toast(t("openAppFailed"));
         } finally {
-          syncQuickAppButtonState(index);
+          renderRecentApps();
+        }
+      }
+
+      async function appWindowAction(app, action, button = null) {
+        if (!app || !app.path) return;
+        if (button) button.disabled = true;
+
+        try {
+          const payload = { path: app.path, action };
+          if (app.name) payload.name = app.name;
+          if (app.args) payload.args = app.args;
+          if (app.aumid) payload.aumid = app.aumid;
+          const res = await apiPost("/apps/window", payload);
+          if (res.status === 403 || res.status === 409) {
+            toast(t("sessionExpired"));
+            await disconnect(true);
+            return;
+          }
+          if (res.status === 400) {
+            const data = await res.json().catch(() => ({}));
+            const detail = String(data.detail || "");
+            if (detail === "application window not found") {
+              toast(t("appWindowNotFound"));
+            } else if (detail === "application is not suitable for quick launch") {
+              toast(t("appNotSuitableControl"));
+            } else {
+              toast(t("appActionFailed"));
+            }
+            return;
+          }
+          if (!res.ok) throw new Error();
+
+          const data = await res.json();
+          applyAppsPayload(data);
+          if (action === "minimize") {
+            toast(t("appMinimized", { name: appLabel(app) }));
+          } else if (action === "close") {
+            toast(t("appClosing", { name: appLabel(app) }));
+          }
+        } catch {
+          toast(t("appActionFailedGeneric"));
+        } finally {
+          renderRecentApps();
+          if (button) button.disabled = false;
+        }
+      }
+
+      async function togglePinnedApp(app, button = null) {
+        if (!app || !app.path) return;
+
+        const wasPinned = isPinnedApp(app);
+        if (button) button.disabled = true;
+
+        try {
+          const payload = { path: app.path };
+          if (app.name) payload.name = app.name;
+          if (app.args) payload.args = app.args;
+          if (app.aumid) payload.aumid = app.aumid;
+          const res = await apiPost(wasPinned ? "/apps/unpin" : "/apps/pin", payload);
+          if (res.status === 403 || res.status === 409) {
+            toast(t("sessionExpired"));
+            await disconnect(true);
+            return;
+          }
+          if (res.status === 400) {
+            const data = await res.json().catch(() => ({}));
+            const detail = String(data.detail || "");
+            if (detail === "application path does not exist") {
+              toast(t("appMissingOnPc"));
+            } else if (detail === "only executable applications are supported") {
+              toast(t("onlyExe"));
+            } else if (detail === "application is not suitable for quick launch") {
+              toast(t("appNotSuitablePin"));
+            } else {
+              toast(t("pinChangeFailed"));
+            }
+            return;
+          }
+          if (!res.ok) throw new Error();
+
+          const data = await res.json();
+          pinnedApps = normalizeRecentApps(data.pinned_apps);
+          toast(
+            wasPinned
+              ? t("appUnpinned", { name: appLabel(app) })
+              : t("appPinned", { name: appLabel(app) }),
+          );
+        } catch {
+          toast(wasPinned ? t("appUnpinFailed") : t("appPinFailed"));
+        } finally {
+          renderRecentApps();
+          if (button) button.disabled = false;
         }
       }
 
@@ -1100,7 +1823,7 @@
         pollFailureCount = 0;
         setConnectedState();
         if (wasOffline) {
-          toast("Соединение восстановлено");
+          toast(t("connectionRestored"));
         }
 
         if (activeTab === "info") {
@@ -1124,7 +1847,7 @@
       async function connect() {
         const btn = $("connectBtn");
         const password = $("password").value.trim();
-        if (!password) return toast("Введи PIN");
+        if (!password) return toast(t("enterPin"));
 
         btn.disabled = true;
         try {
@@ -1132,11 +1855,11 @@
           if (loginRes.status === 409) {
             requiresPasswordSetup = true;
             showEntryCard("setupBlocked");
-            toast("Сначала заверши настройку через QR");
+            toast(t("finishSetupThroughQr"));
             return;
           }
           if (loginRes.status === 403) {
-            toast("Неверный PIN");
+            toast(t("wrongPin"));
             return;
           }
           if (!loginRes.ok) throw new Error();
@@ -1171,7 +1894,7 @@
 
           $("password").value = "";
         } catch {
-          toast("Ошибка подключения");
+          toast(t("connectError"));
           setDot(false);
         } finally {
           btn.disabled = false;
@@ -1224,11 +1947,11 @@
         const btn = $("setupBtn");
         const new_password = $("setupPassword").value.trim();
         if (!isValidPin(new_password)) {
-          toast("PIN должен быть из 4 цифр");
+          toast(t("pinDigitsExact", { count: pinLength }));
           return;
         }
         if (!token) {
-          toast("Открой QR заново");
+          toast(t("reopenQr"));
           return;
         }
 
@@ -1240,7 +1963,7 @@
             body: JSON.stringify({ token, new_password }),
           });
           if (res.status === 403) {
-            toast("QR-токен истёк, открой новый");
+            toast(t("qrExpired"));
             showEntryCard("setupBlocked");
             token = "";
             pairToken = "";
@@ -1248,7 +1971,7 @@
             return;
           }
           if (res.status === 400) {
-            toast("PIN должен быть из 4 цифр");
+            toast(t("pinDigitsExact", { count: pinLength }));
             return;
           }
           if (!res.ok) throw new Error();
@@ -1261,7 +1984,7 @@
           $("setupPassword").value = "";
           await connectWithToken({ completePair: false });
         } catch {
-          toast("Ошибка первичной настройки");
+          toast(t("setupError"));
         } finally {
           btn.disabled = false;
         }
@@ -1270,32 +1993,30 @@
         $("panel").hidden = true;
         showEntryCard(requiresPasswordSetup ? (pairToken ? "setup" : "setupBlocked") : "auth");
         showTab("main");
-        $("statusTitle").textContent = "Не подключено";
+        $("statusTitle").textContent = t("disconnected");
         $("statusSub").textContent = "";
-        $("cpuPill").textContent = "CPU: --%";
-        $("ramPill").textContent = "RAM: --%";
-        $("uptimePill").textContent = "Аптайм: --";
-        $("batteryPill").textContent = "Батарея: --";
-        $("ipPill").textContent = "IP: --";
-        $("hostPill").textContent = "Хост: --";
-        $("networkPrimaryText").textContent = "Основной: --";
-        $("networkInterfacesText").textContent = "Интерфейсы: --";
-        $("audioOutputPill").textContent = "Текущее: --";
+        renderInfoPlaceholders();
         $("audioDeviceSelect").innerHTML = "";
-        $("audioDeviceStatus").textContent = "Выбери устройство вывода.";
-        $("quickAppsStatus").textContent = "Пока доступны только недавно открытые приложения.";
-        for (let index = 0; index < quickAppSlotCount; index += 1) {
-          syncQuickAppButtonState(index);
-        }
+        $("audioDeviceStatus").textContent = t("chooseOutputDevice");
+        recentApps = [];
+        pinnedApps = [];
+        renderRecentApps();
         $("logsBox").value = "";
         logCursor = 0;
         pollFailureCount = 0;
         apiOffline = false;
+        lastOfflineRetryMs = offlineRetryMinMs;
+        lastInfoData = null;
+        lastAudioDevicesData = null;
         lastKnownVolume = 0;
         lastKnownMuted = false;
+        currentVolume = 0;
+        muted = false;
         $("currentPassword").value = "";
         $("newPassword").value = "";
         $("setupPassword").value = "";
+        $("password").value = "";
+        updateVolumeUI();
         setDot(false);
       }
 
@@ -1316,7 +2037,7 @@
         try {
           const res = await apiPost("/status", {});
           if (res.status === 403 || res.status === 409) {
-            toast("Сессия истекла, подключись заново");
+            toast(t("sessionExpiredReconnect"));
             await disconnect(true);
             return { ok: false, sessionExpired: true };
           }
@@ -1343,17 +2064,22 @@
         const d = Math.floor(sec / 86400);
         const h = Math.floor((sec % 86400) / 3600);
         const m = Math.floor((sec % 3600) / 60);
+        if (currentLanguage === "en") {
+          if (d > 0) return `${d}d ${h}h ${m}m`;
+          if (h > 0) return `${h}h ${m}m`;
+          return `${m}m`;
+        }
         if (d > 0) return `${d}д ${h}ч ${m}м`;
         if (h > 0) return `${h}ч ${m}м`;
         return `${m}м`;
       }
 
       function formatBattery(battery) {
-        if (!battery || !battery.present) return "Батарея: нет";
+        if (!battery || !battery.present) return t("noBattery");
         const percent = Number.isFinite(Number(battery.percent)) ? `${Math.round(Number(battery.percent))}%` : "--";
-        const source = battery.power_plugged ? "от сети" : "от батареи";
+        const source = battery.power_plugged ? t("batteryFromAc") : t("batteryFromBattery");
         const eta = Number.isFinite(Number(battery.secs_left)) ? ` - ${formatUptime(battery.secs_left)}` : "";
-        return `Батарея: ${percent} (${source})${eta}`;
+        return `${t("batteryLabel")}: ${percent} (${source})${eta}`;
       }
 
       function formatInterface(item) {
@@ -1361,6 +2087,31 @@
         const type = item.kind ? ` (${item.kind})` : "";
         const speed = Number(item.speed_mbps) > 0 ? ` - ${item.speed_mbps} Mbps` : "";
         return `${item.name}${type} - ${item.ip}${speed}`;
+      }
+
+      function renderStats(data) {
+        lastInfoData = data;
+        const activeOutput = ((data.audio || {}).active_output_device) || {};
+
+        const cpu = Number(data.cpu_percent);
+        const ram = Number(data.ram_percent);
+        $("cpuPill").textContent = `CPU: ${Number.isFinite(cpu) ? Math.round(cpu) : "--"}%`;
+        $("ramPill").textContent = `RAM: ${Number.isFinite(ram) ? Math.round(ram) : "--"}%`;
+        $("uptimePill").textContent = `${t("uptimeLabel")}: ${formatUptime(data.uptime_sec)}`;
+        $("batteryPill").textContent = formatBattery(data.battery);
+
+        const network = data.network || {};
+        $("ipPill").textContent = `IP: ${network.current_ip || "--"}`;
+        $("hostPill").textContent = `${t("hostLabel")}: ${network.hostname || "--"}`;
+        $("networkPrimaryText").textContent = `${t("primaryLabel")}: ${formatInterface(network.primary_interface)}`;
+        const interfaces = Array.isArray(network.interfaces) && network.interfaces.length
+          ? network.interfaces.map((item) => `• ${formatInterface(item)}`).join("\n")
+          : "--";
+        $("networkInterfacesText").textContent = interfaces === "--"
+          ? `${t("interfacesLabel")}: --`
+          : `${t("interfacesLabel")}:\n${interfaces}`;
+
+        $("audioOutputPill").textContent = `${t("currentLabel")}: ${activeOutput.name || "--"}`;
       }
 
       async function fetchStats() {
@@ -1372,28 +2123,7 @@
           }
           if (!res.ok) throw new Error();
           const data = await res.json();
-          const activeOutput = ((data.audio || {}).active_output_device) || {};
-
-          const cpu = Number(data.cpu_percent);
-          const ram = Number(data.ram_percent);
-          $("cpuPill").textContent = `CPU: ${Number.isFinite(cpu) ? Math.round(cpu) : "--"}%`;
-          $("ramPill").textContent = `RAM: ${Number.isFinite(ram) ? Math.round(ram) : "--"}%`;
-          $("uptimePill").textContent = `Аптайм: ${formatUptime(data.uptime_sec)}`;
-
-          $("batteryPill").textContent = formatBattery(data.battery);
-
-          const network = data.network || {};
-          $("ipPill").textContent = `IP: ${network.current_ip || "--"}`;
-          $("hostPill").textContent = `Хост: ${network.hostname || "--"}`;
-          $("networkPrimaryText").textContent = `Основной: ${formatInterface(network.primary_interface)}`;
-          const interfaces = Array.isArray(network.interfaces) && network.interfaces.length
-            ? network.interfaces.map((item) => `• ${formatInterface(item)}`).join("\n")
-            : "--";
-          $("networkInterfacesText").textContent = interfaces === "--"
-            ? "Интерфейсы: --"
-            : `Интерфейсы:\n${interfaces}`;
-
-          $("audioOutputPill").textContent = `Текущее: ${activeOutput.name || "--"}`;
+          renderStats(data);
         } catch {
           await markApiUnavailable();
           // keep old values
@@ -1408,12 +2138,30 @@
         for (const device of devices) {
           const option = document.createElement("option");
           option.value = String(device.id || "");
-          option.textContent = device.is_default ? `${device.name} (текущее)` : device.name;
+          option.textContent = device.is_default
+            ? `${device.name} (${t("currentDeviceSuffix")})`
+            : device.name;
           select.appendChild(option);
         }
 
         const nextValue = forceSelectCurrent ? activeId : previousValue || activeId;
         if (nextValue) select.value = nextValue;
+      }
+
+      function renderAudioDevicesState(data, options = {}) {
+        lastAudioDevicesData = data;
+        const devices = Array.isArray(data.devices) ? data.devices : [];
+        const activeOutput = data.active_output_device || {};
+        populateAudioDeviceSelect(
+          devices,
+          String(activeOutput.id || ""),
+          options.forceSelectCurrent === true,
+        );
+        $("audioOutputPill").textContent = `${t("currentLabel")}: ${activeOutput.name || "--"}`;
+        $("audioDeviceStatus").textContent = options.statusText
+          || (devices.length
+            ? t("audioDevicesFound", { count: devices.length })
+            : t("audioDevicesNone"));
       }
 
       async function fetchAudioDevices(forceSelectCurrent = false) {
@@ -1425,16 +2173,10 @@
           }
           if (!res.ok) throw new Error();
           const data = await res.json();
-          const devices = Array.isArray(data.devices) ? data.devices : [];
-          const activeOutput = data.active_output_device || {};
-          populateAudioDeviceSelect(devices, String(activeOutput.id || ""), forceSelectCurrent);
-          $("audioOutputPill").textContent = `Текущее: ${activeOutput.name || "--"}`;
-          $("audioDeviceStatus").textContent = devices.length
-            ? `Найдено устройств вывода: ${devices.length}.`
-            : "Активные устройства вывода не найдены.";
+          renderAudioDevicesState(data, { forceSelectCurrent });
         } catch {
           await markApiUnavailable();
-          $("audioDeviceStatus").textContent = "Не удалось загрузить список устройств.";
+          $("audioDeviceStatus").textContent = t("audioDevicesLoadFailed");
         }
       }
 
@@ -1442,30 +2184,30 @@
         const select = $("audioDeviceSelect");
         const device_id = select.value;
         if (!device_id) {
-          toast("Выбери устройство вывода");
+          toast(t("chooseOutputDevice"));
           return;
         }
 
         try {
           const res = await apiPost("/audio/device", { device_id });
           if (res.status === 403 || res.status === 409) {
-            toast("Сессия истекла");
+            toast(t("sessionExpired"));
             await disconnect(true);
             return;
           }
           if (!res.ok) throw new Error();
           const data = await res.json();
           const activeOutput = data.active_output_device || {};
-          const devices = Array.isArray(data.devices) ? data.devices : [];
-          populateAudioDeviceSelect(devices, String(activeOutput.id || ""), true);
-          $("audioOutputPill").textContent = `Текущее: ${activeOutput.name || "--"}`;
-          $("audioDeviceStatus").textContent = activeOutput.name
-            ? `Переключено на ${activeOutput.name}.`
-            : "Устройство вывода изменено.";
+          renderAudioDevicesState(data, {
+            forceSelectCurrent: true,
+            statusText: activeOutput.name
+              ? t("outputSwitchedTo", { name: activeOutput.name })
+              : t("outputChanged"),
+          });
         } catch {
           await markApiUnavailable();
-          $("audioDeviceStatus").textContent = "Не удалось переключить устройство.";
-          toast("Ошибка смены устройства");
+          $("audioDeviceStatus").textContent = t("outputSwitchFailed");
+          toast(t("outputSwitchError"));
         }
       }
 
@@ -1539,7 +2281,7 @@
         try {
           const res = await apiPost("/volume", { value });
           if (res.status === 403 || res.status === 409) {
-            toast("Сессия истекла");
+            toast(t("sessionExpired"));
             await disconnect(true);
             return;
           }
@@ -1550,7 +2292,7 @@
         } catch {
           restoreVolumeState();
           await markApiUnavailable();
-          toast("Не удалось изменить громкость");
+          toast(t("volumeChangeFailed"));
         }
       }
 
@@ -1571,7 +2313,7 @@
           const res = await apiPost("/volume", { action: direction });
           if (res.status === 403 || res.status === 409) {
             queuedVolumeSteps = 0;
-            toast("Сессия истекла");
+            toast(t("sessionExpired"));
             await disconnect(true);
             return;
           }
@@ -1583,7 +2325,7 @@
           queuedVolumeSteps = 0;
           restoreVolumeState();
           await markApiUnavailable();
-          toast("Не удалось изменить громкость");
+          toast(t("volumeChangeFailed"));
         } finally {
           volumeStepBusy = false;
           if (queuedVolumeSteps !== 0) {
@@ -1608,7 +2350,7 @@
         try {
           const res = await apiPost("/mute", {});
           if (res.status === 403 || res.status === 409) {
-            toast("Сессия истекла");
+            toast(t("sessionExpired"));
             await disconnect(true);
             return;
           }
@@ -1619,7 +2361,7 @@
           rememberVolumeState();
         } catch {
           await markApiUnavailable();
-          toast("Не удалось переключить звук");
+          toast(t("muteToggleFailed"));
         }
       }
 
@@ -1627,48 +2369,48 @@
         try {
           const res = await apiPost("/media", { action });
           if (res.status === 403 || res.status === 409) {
-            toast("Сессия истекла");
+            toast(t("sessionExpired"));
             await disconnect(true);
             return;
           }
           if (!res.ok) throw new Error();
         } catch {
           await markApiUnavailable();
-          toast("Ошибка медиа");
+          toast(t("mediaError"));
         }
       }
 
       async function shutdownPc() {
-        if (!confirm("Точно выключить ПК?")) return;
+        if (!confirm(t("shutdownConfirm"))) return;
         try {
           const res = await apiPost("/shutdown", {});
           if (res.status === 403 || res.status === 409) {
-            toast("Сессия истекла");
+            toast(t("sessionExpired"));
             await disconnect(true);
             return;
           }
           if (!res.ok) throw new Error();
-          toast("Команда отправлена");
+          toast(t("commandSent"));
         } catch {
           await markApiUnavailable();
-          toast("Ошибка выключения");
+          toast(t("shutdownError"));
         }
       }
 
       async function rebootPc() {
-        if (!confirm("Точно перезагрузить ПК?")) return;
+        if (!confirm(t("rebootConfirm"))) return;
         try {
           const res = await apiPost("/reboot", {});
           if (res.status === 403 || res.status === 409) {
-            toast("Сессия истекла");
+            toast(t("sessionExpired"));
             await disconnect(true);
             return;
           }
           if (!res.ok) throw new Error();
-          toast("Команда отправлена");
+          toast(t("commandSent"));
         } catch {
           await markApiUnavailable();
-          toast("Ошибка перезагрузки");
+          toast(t("rebootError"));
         }
       }
 
@@ -1677,11 +2419,11 @@
         const new_password = $("newPassword").value.trim();
 
         if (!current_password || !new_password) {
-          toast("Заполни оба поля");
+          toast(t("fillBothPinFields"));
           return;
         }
         if (!isValidPin(new_password)) {
-          toast("Новый PIN: 4 цифры");
+          toast(t("newPinDigitsExact", { count: pinLength }));
           return;
         }
 
@@ -1691,25 +2433,49 @@
             new_password,
           });
           if (res.status === 403) {
-            toast("Неверный текущий PIN");
+            toast(t("currentPinWrong"));
             return;
           }
           if (!res.ok) throw new Error();
 
-          toast("PIN изменён");
+          toast(t("pinChanged"));
           token = "";
           stopPolling();
           resetUi();
         } catch {
           await markApiUnavailable();
-          toast("Ошибка смены PIN");
+          toast(t("pinChangeError"));
         }
       }
 
-      configurePinInputs();
-      quickAppSelections = loadQuickAppSelections();
-      renderQuickAppOptions();
-      $("apiHint").textContent = `Веб: http://${host}:${webPort} | v${appVersion}`;
+      async function restartAppClean() {
+        const confirmed = confirm(t("cleanRestartConfirm"));
+        if (!confirmed) return;
+
+        try {
+          const res = await apiPost("/app/restart", { clean_start: true });
+          if (res.status === 403 || res.status === 409) {
+            toast(t("sessionExpired"));
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+
+          toast(t("appRestarting"));
+          requiresPasswordSetup = true;
+          stopPolling();
+          token = "";
+          pairToken = "";
+          storePairToken("");
+          resetUi();
+        } catch {
+          await markApiUnavailable();
+          toast(t("appRestartFailed"));
+        }
+      }
+
+      applyTheme(currentTheme, { persist: false });
+      applyLocalization();
 
       async function initializeApp() {
         const params = new URLSearchParams(window.location.search);

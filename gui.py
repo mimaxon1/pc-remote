@@ -9,18 +9,23 @@ import logging
 import queue
 import threading
 import tkinter as tk
+from tkinter import messagebox
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Callable
+from typing import Any, Callable
 
 import autostart
 import config
 import net_utils
 
-Icon = Menu = MenuItem = None  # type: ignore[assignment]
-Image = ImageDraw = ImageTk = None  # type: ignore[assignment]
-qrcode = None  # type: ignore[assignment]
+Icon: Any = None
+Menu: Any = None
+MenuItem: Any = None
+Image: Any = None
+ImageDraw: Any = None
+ImageTk: Any = None
+qrcode: Any = None
 _PYSTRAY_AVAILABLE: bool | None = None
 _PIL_AVAILABLE: bool | None = None
 _QRCODE_AVAILABLE: bool | None = None
@@ -36,8 +41,8 @@ class LogEntry:
 
 phone_connected = False
 logs: deque[LogEntry] = deque(maxlen=config.LOG_BUFFER_LIMIT)
-gui_icon = None
-_tk_root = None
+gui_icon: Any = None
+_tk_root: tk.Tk | None = None
 _tk_queue: queue.Queue[Callable[[], None]] = queue.Queue()
 _logs_lock = threading.Lock()
 _next_log_id = 0
@@ -174,6 +179,15 @@ def set_phone_status(connected: bool) -> None:
         gui_icon.title = f"Ассистент - Телефон {'Подключен' if connected else 'Отключен'}"
 
 
+def _widget_exists(widget: tk.Misc | None) -> bool:
+    if widget is None:
+        return False
+    try:
+        return bool(widget.winfo_exists())
+    except tk.TclError:
+        return False
+
+
 def _process_tk_queue() -> None:
     while True:
         try:
@@ -185,17 +199,51 @@ def _process_tk_queue() -> None:
         except Exception as exc:
             logger.exception("GUI queue action failed: %s", exc)
             add_log(f"Ошибка GUI: {exc}")
-    if _tk_root and _tk_root.winfo_exists():
-        _tk_root.after(config.TK_QUEUE_POLL_MS, _process_tk_queue)
+    root = _tk_root
+    if _widget_exists(root):
+        try:
+            root.after(config.TK_QUEUE_POLL_MS, _process_tk_queue)
+        except tk.TclError:
+            pass
 
 
 def _enqueue_tk(fn: Callable[[], None]) -> None:
     _tk_queue.put(fn)
 
 
+def request_exit() -> None:
+    """Ask the tray and Tk loop to stop so the process can exit cleanly."""
+
+    def close_root() -> None:
+        global _tk_root
+        root = _tk_root
+        if not _widget_exists(root):
+            _tk_root = None
+            return
+        try:
+            root.quit()
+        except tk.TclError:
+            pass
+        try:
+            root.destroy()
+        except tk.TclError:
+            pass
+        _tk_root = None
+
+    if gui_icon is not None:
+        try:
+            gui_icon.stop()
+        except Exception as exc:
+            logger.warning("Failed to stop tray icon: %s", exc)
+
+    if _tk_root is not None:
+        _enqueue_tk(close_root)
+
+
 def _ensure_root() -> tk.Tk:
-    if _tk_root and _tk_root.winfo_exists():
-        return _tk_root
+    root = _tk_root
+    if _widget_exists(root):
+        return root
     raise RuntimeError("Tk root is not ready")
 
 
@@ -209,11 +257,11 @@ def _open_logs() -> None:
         text.insert(tk.END, line + "\n")
 
 
-def show_logs(icon, item) -> None:
+def show_logs(icon: object, item: object) -> None:
     _enqueue_tk(_open_logs)
 
 
-def create_image():
+def create_image() -> Any:
     if not _ensure_pillow():
         raise RuntimeError("Pillow is required for tray icon rendering")
     image = Image.new("RGB", (64, 64), color="green")
@@ -365,7 +413,7 @@ def _open_qr() -> None:
             pair_waiter.wait()
             _enqueue_tk(close_qr_window)
 
-        def on_destroy(event) -> None:
+        def on_destroy(event: tk.Event[tk.Misc]) -> None:
             if event.widget is win:
                 clear_pair_waiter(token)
                 if pair_waiter is not None:
@@ -375,7 +423,7 @@ def _open_qr() -> None:
         threading.Thread(target=wait_for_pair_completion, daemon=True).start()
 
 
-def show_qr(icon, item) -> None:
+def show_qr(icon: object, item: object) -> None:
     _enqueue_tk(_open_qr)
 
 
@@ -477,14 +525,47 @@ def _open_settings() -> None:
 
     tk.Button(win, text="Сменить PIN", command=change_password).grid(row=8, column=1, sticky="w", padx=6, pady=(0, 12))
 
+    reset_status = tk.StringVar(value="")
+    tk.Label(win, text="Сброс приложения:").grid(row=9, column=0, sticky="w", padx=12, pady=(8, 4))
+    tk.Label(
+        win,
+        text="Удалит PIN и потребует QR-настройку заново.",
+        wraplength=280,
+        justify="left",
+    ).grid(row=10, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 4))
+    tk.Label(win, textvariable=reset_status).grid(row=11, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 4))
+
+    def clean_restart() -> None:
+        confirmed = messagebox.askyesno(
+            "Чистый перезапуск",
+            "Приложение удалит PIN и перезапустится. Продолжить?",
+            parent=win,
+        )
+        if not confirmed:
+            return
+
+        code, _ = _api_post("/app/restart", {"clean_start": True})
+        if code == 200:
+            reset_status.set("Перезапускаем приложение...")
+        elif code is None:
+            reset_status.set("Нет связи с приложением")
+        else:
+            reset_status.set("Не удалось перезапустить")
+
+    tk.Button(
+        win,
+        text="Сбросить и перезапустить",
+        command=clean_restart,
+    ).grid(row=12, column=1, sticky="w", padx=6, pady=(0, 12))
+
     update_autostart_ui()
 
 
-def show_settings(icon, item) -> None:
+def show_settings(icon: object, item: object) -> None:
     _enqueue_tk(_open_settings)
 
 
-def quit_app(icon, item) -> None:
+def quit_app(icon: Any, item: object) -> None:
     icon.stop()
     logger.info("Tray exit requested")
 

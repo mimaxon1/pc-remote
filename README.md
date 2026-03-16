@@ -2,7 +2,7 @@
 
 Windows PC remote control from a phone over the local network.
 
-Current release target: `v1.3.5`
+Current release target: `v1.4.0`
 
 The app runs:
 - FastAPI API on `:8000`
@@ -17,6 +17,10 @@ The app runs:
 - Passwordless QR reconnect
 - Volume and mute control
 - Media key control
+- Quick launch for recent and pinned desktop apps
+- Open, minimize, and close app windows from the controller
+- Light and dark theme toggle in the web controller
+- Russian and English UI language switch
 - Adaptive offline detection with retry backoff in the web controller
 - Reboot and shutdown actions
 - Single-instance protection

@@ -1,6 +1,7 @@
 """Unit tests for tray GUI fallbacks."""
 
 from collections import deque
+import queue
 from unittest.mock import patch
 
 import gui
@@ -26,6 +27,8 @@ class TestGuiHelpers:
         gui.logs = deque(maxlen=gui.config.LOG_BUFFER_LIMIT)
         gui._next_log_id = 0
         gui._pair_waiters = {}
+        gui._tk_queue = queue.Queue()
+        gui._tk_root = None
 
     def test_get_logs_supports_incremental_reads(self):
         gui.add_log("one")
@@ -59,3 +62,31 @@ class TestGuiHelpers:
                 "http://eth-host:8080/?token=pair-token",
                 "http://vpn-host:8080/?token=pair-token",
             ]
+
+    def test_widget_exists_handles_destroyed_tk_root(self):
+        class DestroyedRoot:
+            def winfo_exists(self):
+                raise gui.tk.TclError("application has been destroyed")
+
+        assert gui._widget_exists(DestroyedRoot()) is False
+
+    def test_process_tk_queue_ignores_destroyed_root(self):
+        class DestroyedRoot:
+            def winfo_exists(self):
+                raise gui.tk.TclError("application has been destroyed")
+
+        gui._tk_root = DestroyedRoot()
+        gui._process_tk_queue()
+
+    def test_request_exit_clears_dead_root_reference(self):
+        class DeadRoot:
+            def winfo_exists(self):
+                raise gui.tk.TclError("application has been destroyed")
+
+        gui._tk_root = DeadRoot()
+        gui.request_exit()
+
+        fn = gui._tk_queue.get_nowait()
+        fn()
+
+        assert gui._tk_root is None

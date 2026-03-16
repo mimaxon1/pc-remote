@@ -161,5 +161,23 @@ class TestAuthManager:
         assert data["password"] == {"is_set": False}
 
 
+class TestPersistedSettingsCleanup:
+    def test_remove_persisted_settings_deletes_existing_files(self, tmp_path: Path):
+        current = tmp_path / "current" / "settings.json"
+        legacy = tmp_path / "legacy" / "settings.json"
+        runtime = tmp_path / "runtime" / "settings.json"
+
+        for path in (current, legacy, runtime):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}", encoding="utf-8")
+
+        with patch("auth.settings_candidates", return_value=[current, legacy, runtime]):
+            removed = auth.remove_persisted_settings()
+
+        assert removed == [current, legacy, runtime]
+        for path in (current, legacy, runtime):
+            assert path.exists() is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
