@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/mimaxon1/pc-remote/actions/workflows/tests.yml">
-    <img src="https://github.com/mimaxon1/pc-remote/actions/workflows/tests.yml/badge.svg" alt="Tests">
+    <img src="https://github.com/mimaxon1/pc-remote/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests">
   </a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6" alt="Platform">
   <img src="https://img.shields.io/badge/python-3.13%2B-3776AB" alt="Python">
@@ -70,6 +70,13 @@ python -m pip install -r requirements.txt pyinstaller tzdata
 python build_release.py
 ```
 
+If you intentionally want a clean first-run package that forgets your local app
+state, use:
+
+```powershell
+python build_release.py --reset-settings
+```
+
 Output:
 
 - `dist\PC Remote\PC Remote.exe`
@@ -123,6 +130,8 @@ Documentation for test layout, targeted runs, and troubleshooting lives in
 - `ModuleNotFoundError: pystray`: install dependencies again and rebuild
 - `PermissionError` under `dist\PC Remote`: close the running app before rebuilding
 - Pairing opens an unreachable address: override the host with `PC_REMOTE_PUBLIC_HOST`
+- Release build should start from a clean state: build with `--reset-settings`
+  instead of deleting `%APPDATA%\PC Remote\settings.json` manually
 
 ## Development Notes
 
@@ -130,3 +139,8 @@ Documentation for test layout, targeted runs, and troubleshooting lives in
 - Supporting docs live under `docs/` to keep the repository root clean
 - Temporary analysis files such as `tmp_*` are intentionally ignored and do not
   ship with the public repository
+
+## License
+
+This project is open source under the Apache License 2.0. See [LICENSE](LICENSE)
+and [NOTICE](NOTICE).

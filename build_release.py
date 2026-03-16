@@ -1,9 +1,8 @@
-"""Build helper that resets persisted app settings before PyInstaller runs."""
+"""Build helper for PyInstaller-based Windows bundles."""
 
 from __future__ import annotations
 
 import argparse
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -69,7 +68,12 @@ def _build_command(pyinstaller_args: list[str]) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Reset persisted settings and build the Windows bundle.",
+        description="Build the Windows bundle and optionally reset persisted settings first.",
+    )
+    parser.add_argument(
+        "--reset-settings",
+        action="store_true",
+        help="Remove persisted app settings before building.",
     )
     parser.add_argument(
         "--dry-run",
@@ -83,9 +87,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args, pyinstaller_args = parser.parse_known_args(argv)
 
-    actions = _remove_settings(_settings_candidates(), dry_run=args.dry_run)
-    for action in actions:
-        print(action)
+    if args.reset_settings:
+        actions = _remove_settings(_settings_candidates(), dry_run=args.dry_run)
+        for action in actions:
+            print(action)
+    else:
+        print("preserving persisted settings (use --reset-settings to remove them before build)")
 
     if args.skip_build:
         return 0

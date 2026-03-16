@@ -3,6 +3,27 @@
 This roadmap reflects the public-facing direction of the project. It is shorter
 and cleaner than the local working notes, but tracks the same priorities.
 
+## Next Build Focus
+
+The next build should ship one user-facing change only:
+
+- Installable PWA support for the web controller
+
+Scope for that build:
+
+- Add a proper web app manifest
+- Make the controller installable from supported mobile browsers
+- Open in standalone app mode after installation
+- Keep icons, app name, theme color, and launch entry consistent
+- Replace the current legacy PWA cleanup workaround with a real install flow
+
+Out of scope for that build:
+
+- Full offline-first behavior
+- Broad UI redesign
+- New control features unrelated to installation
+- Security and auth changes unless they directly block the PWA install flow
+
 ## Current Scope
 
 PC Remote already provides:
@@ -17,15 +38,14 @@ PC Remote already provides:
 
 ### Security And Hardening
 
-- Add explicit login rate limiting and lockout telemetry
 - Continue tightening auth edge cases around setup and password changes
 - Document safer deployment guidance for users who want reverse proxies or HTTPS
 
 ### Reliability And UX
 
-- Keep startup and shutdown behavior predictable across source and packaged runs
+- Introduce stable API error codes so the web client no longer depends on response text
 - Improve first-run diagnostics when pairing or local host detection goes wrong
-- Make offline / reconnect messaging in the web controller even clearer
+- Keep source-run, packaged-run, and future PWA behavior aligned
 
 ### Controller Capabilities
 

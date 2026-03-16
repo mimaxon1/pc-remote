@@ -110,7 +110,10 @@ def add_log(message: str) -> None:
     with _logs_lock:
         _next_log_id += 1
         logs.append(LogEntry(id=_next_log_id, message=message))
-    print(message)
+    if logger.handlers:
+        logger.info(message)
+    else:
+        print(message)
 
 
 def get_logs(since: int | None, limit: int) -> tuple[list[LogEntry], int, bool]:

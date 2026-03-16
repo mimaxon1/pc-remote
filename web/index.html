@@ -2508,20 +2508,6 @@
       }
       initializeApp();
 
-      // Cleanup: older versions tried to register a service worker for PWA-install.
-      // We don't use it anymore, so unregister it (if it exists) to avoid stale caching.
-      try {
-        if ("serviceWorker" in navigator) {
-          navigator.serviceWorker.getRegistrations().then((regs) => {
-            regs.forEach((reg) => reg.unregister());
-          });
-        }
-        if ("caches" in window) {
-          caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
-        }
-      } catch {
-        // ignore
-      }
     </script>
   </body>
 </html>
