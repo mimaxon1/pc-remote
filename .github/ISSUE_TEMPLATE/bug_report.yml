@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible problem with the app, tray UI, or web controller.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please share enough detail for someone else to reproduce the issue on a Windows machine.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: App version, commit hash, or build date if known.
+      placeholder: v1.4.0
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Pairing and auth
+        - Web controller
+        - Audio or media controls
+        - App launch or window actions
+        - Tray GUI
+        - Packaging or startup
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the app
+        2. Open the controller on the phone
+        3. Tap ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant logs or screenshots if available.
+      render: shell

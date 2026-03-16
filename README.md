@@ -1,38 +1,55 @@
-# PC Remote
+<p align="center">
+  <img src="web/icons/icon-192.png" alt="PC Remote icon" width="96">
+</p>
 
-Windows PC remote control from a phone over the local network.
+<h1 align="center">PC Remote</h1>
+
+<p align="center">
+  Control a Windows PC from your phone over the local network with QR onboarding,
+  a tray companion app, and a lightweight web controller.
+</p>
+
+<p align="center">
+  <a href="https://github.com/mimaxon1/pc-remote/actions/workflows/tests.yml">
+    <img src="https://github.com/mimaxon1/pc-remote/actions/workflows/tests.yml/badge.svg" alt="Tests">
+  </a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6" alt="Platform">
+  <img src="https://img.shields.io/badge/python-3.13%2B-3776AB" alt="Python">
+</p>
 
 Current release target: `v1.4.0`
 
-The app runs:
-- FastAPI API on `:8000`
-- Static web controller on `:8080`
-- Tray app for QR pairing, settings, and status
+## Overview
 
-## Features
+PC Remote runs three pieces together:
+
+- A FastAPI API on port `8000`
+- A static web controller on port `8080`
+- A Windows tray app for QR pairing, settings, and status
+
+The project is designed for local LAN use. It is not intended to be exposed
+directly to the public internet.
+
+## Highlights
 
 - QR-based first-run setup
-- No default PIN in source code
-- 4-digit PIN for manual login
-- Passwordless QR reconnect
-- Volume and mute control
-- Media key control
+- Passwordless QR reconnect after pairing
+- 4-digit PIN login flow
+- Volume, mute, and media controls
 - Quick launch for recent and pinned desktop apps
 - Open, minimize, and close app windows from the controller
-- Light and dark theme toggle in the web controller
+- Light and dark theme toggle in the web UI
 - Russian and English UI language switch
-- Adaptive offline detection with retry backoff in the web controller
-- Reboot and shutdown actions
-- Single-instance protection
-- Tray-based autostart
+- Adaptive offline detection with retry backoff
+- Tray-based autostart and single-instance protection
 
 ## Requirements
 
-- Windows 10/11
+- Windows 10 or Windows 11
 - Python 3.13+ for source runs and builds
-- Current source tree validated locally on Python 3.14
+- A phone and PC connected to the same local network
 
-## Run from source
+## Quick Start
 
 ```powershell
 py -3.13 -m venv .venv
@@ -42,9 +59,9 @@ python main.py
 ```
 
 `tkinter` is not installed from pip here; it ships with the standard Windows
-Python build used by the tray GUI.
+Python distribution used by the tray GUI.
 
-## Build (portable Windows bundle)
+## Build A Portable Bundle
 
 ```powershell
 py -3.13 -m venv .venv
@@ -54,28 +71,62 @@ python build_release.py
 ```
 
 Output:
+
 - `dist\PC Remote\PC Remote.exe`
 
-## Run the build
+## Testing
 
-Run `dist\PC Remote\PC Remote.exe`. No Python is required on the target PC.
+Run the full suite from the repository root:
 
-## Configuration
+```powershell
+.venv\Scripts\python.exe -m pytest
+```
 
-- `settings.json` is created in per-user app data (`%APPDATA%\PC Remote\settings.json` on Windows)
-- First run requires QR setup before a PIN exists
-- Runtime defaults are centralized in `config.py`
-- `/health` returns app health and version metadata for quick diagnostics
-- Rotating logs are written to `%APPDATA%\PC Remote\pc-remote.log`
-- Autostart uses the current user Startup folder and writes `PC Remote.cmd`
+Documentation for test layout, targeted runs, and troubleshooting lives in
+[docs/testing.md](docs/testing.md).
 
-## Network
+## Documentation
 
-- Designed for local LAN use
-- QR uses the best detected local host; if it opens an unreachable address, set `PC_REMOTE_PUBLIC_HOST=192.168.x.x` before launch to force the host used in QR and web links
+- [Documentation hub](docs/README.md)
+- [Testing guide](docs/testing.md)
+- [Roadmap](docs/roadmap.md)
+- [Implementation notes](docs/implementation-notes.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+
+## Project Layout
+
+```text
+.
+|- main.py                  FastAPI entry point and startup flow
+|- auth.py                  PIN, QR pairing, and token management
+|- gui.py                   Tray UI and setup/status windows
+|- apps.py                  App discovery, quick launch, and window actions
+|- audio.py                 Windows audio device and volume helpers
+|- web/                     Static controller UI and icons
+|- tests/                   Automated test suite
+|- docs/                    Supporting documentation
+|- build_release.py         Portable Windows bundle helper
+```
+
+## Configuration Notes
+
+- Runtime settings live in `%APPDATA%\PC Remote\settings.json`
+- Logs are written to `%APPDATA%\PC Remote\pc-remote.log`
+- `/health` exposes a lightweight status endpoint for diagnostics
+- If QR links resolve to the wrong local address, set
+  `PC_REMOTE_PUBLIC_HOST=192.168.x.x` before launch
 - If the phone cannot connect, allow ports `8000` and `8080` in Windows Firewall
 
 ## Troubleshooting
 
-- `ModuleNotFoundError: pystray`: install `pystray` and rebuild
-- `PermissionError` on `dist\PC Remote`: close the running app and rebuild, or use `--distpath` to a new folder
+- `ModuleNotFoundError: pystray`: install dependencies again and rebuild
+- `PermissionError` under `dist\PC Remote`: close the running app before rebuilding
+- Pairing opens an unreachable address: override the host with `PC_REMOTE_PUBLIC_HOST`
+
+## Development Notes
+
+- Tests are expected to pass on Windows and currently run in GitHub Actions
+- Supporting docs live under `docs/` to keep the repository root clean
+- Temporary analysis files such as `tmp_*` are intentionally ignored and do not
+  ship with the public repository

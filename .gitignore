@@ -11,6 +11,7 @@ dist*/
 release-builds/
 
 settings.json
+# Local planning notes
 PLAN.md
 *.log
 logs/

@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an improvement for the controller, tray app, or developer workflow.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please focus on the user problem first, then describe the feature that could solve it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Pairing and auth
+        - Web controller
+        - Audio or media controls
+        - App launch or window actions
+        - Tray GUI
+        - Build and release workflow
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Extra context
+      description: Constraints, alternatives considered, or why this matters.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- moved automated tests into the dedicated `tests/` directory
+- grouped supporting docs under `docs/` and refreshed the public documentation set
+- added GitHub Actions test automation plus issue and pull request templates
+- rewrote the README to present the project more cleanly on GitHub
+
 ## v1.4.0
 
 - added quick app actions in the web controller for opening, minimizing, and closing user apps
