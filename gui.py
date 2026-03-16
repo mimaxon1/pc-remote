@@ -223,13 +223,13 @@ def create_image():
 
 
 def _web_url() -> str:
-    ip = net_utils.get_local_ip()
-    return f"http://{ip}:{config.WEB_PORT}"
+    host = net_utils.get_public_hosts()[0]
+    return f"http://{host}:{config.WEB_PORT}"
 
 
 def _api_url() -> str:
-    ip = net_utils.get_local_ip()
-    return f"http://{ip}:{config.API_PORT}"
+    host = net_utils.get_public_hosts()[0]
+    return f"http://{host}:{config.API_PORT}"
 
 
 def _copy_to_clipboard(root: tk.Tk, value: str) -> None:
@@ -276,6 +276,21 @@ def _get_pair_payload() -> tuple[str | None, bool]:
         logger.warning("Failed to parse QR pair token response: %s", exc)
         return None, False
 
+def _pair_url(base_url: str, token: str | None) -> str:
+    if not token:
+        return base_url
+    query = urllib.parse.urlencode({"token": token})
+    return f"{base_url}/?{query}"
+
+
+def _alternative_pair_urls(token: str | None) -> list[str]:
+    urls: list[str] = []
+    for host in net_utils.get_public_hosts()[1:]:
+        url = _pair_url(f"http://{host}:{config.WEB_PORT}", token)
+        if url not in urls:
+            urls.append(url)
+    return urls
+
 
 def _open_qr() -> None:
     if not _ensure_pillow() or not _ensure_qrcode():
@@ -284,11 +299,8 @@ def _open_qr() -> None:
 
     token, requires_setup = _get_pair_payload()
     base_url = _web_url()
-    pair_url = base_url
-    if token:
-        query = urllib.parse.urlencode({"token": token})
-        pair_url = f"{base_url}/?{query}"
-    else:
+    pair_url = _pair_url(base_url, token)
+    if not token:
         logger.warning("QR token was not issued; showing base web address only")
 
     root = _ensure_root()
@@ -312,6 +324,14 @@ def _open_qr() -> None:
     label.pack(padx=12, pady=(12, 6))
 
     tk.Label(win, text=pair_url, wraplength=260, justify="center").pack(pady=(0, 6))
+    alternative_urls = _alternative_pair_urls(token)
+    if alternative_urls:
+        tk.Label(
+            win,
+            text="If this QR URL times out, try:\n" + "\n".join(alternative_urls[:3]),
+            wraplength=260,
+            justify="center",
+        ).pack(padx=12, pady=(0, 6))
     if requires_setup:
         tk.Label(
             win,
@@ -329,7 +349,7 @@ def _open_qr() -> None:
     tk.Button(
         win,
         text="Скопировать адрес",
-        command=lambda: _copy_to_clipboard(win, base_url),
+        command=lambda: _copy_to_clipboard(win, pair_url),
     ).pack(pady=(0, 12))
 
     if token:

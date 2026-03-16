@@ -8,6 +8,7 @@ import logging
 import shutil
 import socket
 import sys
+import urllib.parse
 from pathlib import Path
 
 import config
@@ -242,41 +243,39 @@ def _fallback_ip() -> str:
         sock.close()
 
 
-def get_local_ip() -> str:
-    """Best-effort local IP for printing the URL in console/UI."""
-    preferred_iface, preferred_ip = _load_network_settings()
-
-    if not _PSUTIL_AVAILABLE:
-        return _fallback_ip()
-
+def _active_ipv4_candidates() -> list[tuple[str, ipaddress.IPv4Address]]:
     candidates: list[tuple[str, ipaddress.IPv4Address]] = []
-    addrs = psutil.net_if_addrs()
-    stats = psutil.net_if_stats()
-
-    for if_name, addr_list in addrs.items():
-        st = stats.get(if_name)
-        if st and not st.isup:
+    for item in list_active_ipv4_interfaces():
+        try:
+            name = str(item.get("name") or "")
+            ip = ipaddress.IPv4Address(str(item.get("ip") or ""))
+        except Exception:
             continue
-        for addr in addr_list:
-            if addr.family != socket.AF_INET:
-                continue
-            try:
-                ip = ipaddress.IPv4Address(addr.address)
-            except Exception:
-                continue
-            if ip.is_loopback or ip.is_link_local:
-                continue
-            candidates.append((if_name, ip))
+        if ip.is_loopback or ip.is_link_local:
+            continue
+        candidates.append((name, ip))
+    return candidates
+
+
+def get_local_ips() -> list[str]:
+    """Ordered local IPv4 candidates for URLs shown to phone clients."""
+    preferred_iface, preferred_ip = _load_network_settings()
+    candidates = _active_ipv4_candidates()
+    ordered: list[str] = []
+
+    def push(value: str | None) -> None:
+        if value and value not in ordered:
+            ordered.append(value)
 
     if preferred_ip:
         for if_name, ip in candidates:
             if str(ip) == preferred_ip:
-                return str(ip)
+                push(str(ip))
 
     if preferred_iface:
         for if_name, ip in candidates:
             if if_name.casefold() == preferred_iface.casefold():
-                return str(ip)
+                push(str(ip))
 
     def pick_by_tokens(tokens: tuple[str, ...]) -> str | None:
         for if_name, ip in candidates:
@@ -289,17 +288,61 @@ def get_local_ip() -> str:
                 return str(ip)
         return None
 
-    eth_ip = pick_by_tokens(_ETH_TOKENS)
-    if eth_ip:
-        return eth_ip
-
     wifi_ip = pick_by_tokens(_WIFI_TOKENS)
     if wifi_ip:
-        return wifi_ip
+        push(wifi_ip)
+
+    eth_ip = pick_by_tokens(_ETH_TOKENS)
+    if eth_ip:
+        push(eth_ip)
+
+    if candidates:
+        scored = [(_score_iface(name, ip), name, str(ip), ip) for name, ip in candidates]
+        scored.sort(key=lambda item: item[0], reverse=True)
+        for _, name, ip, parsed_ip in scored:
+            if _is_bad_iface(name) or _is_virtualbox_hostonly_ip(parsed_ip):
+                continue
+            push(ip)
+
+    if ordered:
+        return ordered
 
     if candidates:
         scored = [(_score_iface(name, ip), str(ip)) for name, ip in candidates]
         scored.sort(key=lambda item: item[0], reverse=True)
-        return scored[0][1]
+        for _, ip in scored:
+            push(ip)
 
-    return _fallback_ip()
+    if ordered:
+        return ordered
+
+    fallback = _fallback_ip()
+    return [fallback] if fallback else []
+
+
+def get_local_ip() -> str:
+    """Best-effort local IP for printing the URL in console/UI."""
+    items = get_local_ips()
+    return items[0] if items else _fallback_ip()
+
+
+def _normalize_host(value: str | None) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    candidate = raw if "://" in raw else f"//{raw}"
+    parsed = urllib.parse.urlsplit(candidate)
+    host = parsed.hostname
+    return str(host).strip() if host else None
+
+
+def get_public_hosts() -> list[str]:
+    """Ordered public hosts for QR and browser entry points."""
+    hosts: list[str] = []
+    override = _normalize_host(config.PUBLIC_HOST)
+    if override:
+        hosts.append(override)
+    primary = get_local_ip()
+    if primary not in hosts:
+        hosts.append(primary)
+    return hosts

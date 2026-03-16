@@ -46,3 +46,16 @@ class TestGuiHelpers:
         gui.notify_pair_completed("pair-token")
 
         assert waiter.is_set() is True
+
+    def test_pair_url_uses_token_when_available(self):
+        assert gui._pair_url("http://pc:8080", "pair-token") == "http://pc:8080/?token=pair-token"
+
+    def test_pair_url_falls_back_to_base_url(self):
+        assert gui._pair_url("http://pc:8080", None) == "http://pc:8080"
+
+    def test_alternative_pair_urls_use_secondary_hosts(self):
+        with patch("gui.net_utils.get_public_hosts", return_value=["wifi-host", "eth-host", "vpn-host"]):
+            assert gui._alternative_pair_urls("pair-token") == [
+                "http://eth-host:8080/?token=pair-token",
+                "http://vpn-host:8080/?token=pair-token",
+            ]

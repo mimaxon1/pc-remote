@@ -5,11 +5,13 @@ import functools
 import json
 import os
 import socket
+from socketserver import TCPServer
 import sys
 import threading
 import time
 from dataclasses import dataclass, field
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
 from typing import Annotated, Callable, Literal, Optional
 from urllib.parse import urlsplit
 
@@ -62,18 +64,23 @@ def _ensure_auth_manager_initialized() -> None:
         AUTH_INIT_ERROR = str(exc)
 
 
-allowed_origins = [
-    f"http://localhost:{config.WEB_PORT}",
-    f"http://127.0.0.1:{config.WEB_PORT}",
-    f"http://localhost:{config.API_PORT}",
-    f"http://127.0.0.1:{config.API_PORT}",
-]
-try:
-    local_ip = net_utils.get_local_ip()
-    allowed_origins.append(f"http://{local_ip}:{config.WEB_PORT}")
-    allowed_origins.append(f"http://{local_ip}:{config.API_PORT}")
-except Exception as exc:
-    logger.warning("Failed to determine local IP for CORS allowlist: %s", exc)
+def _build_allowed_origins() -> list[str]:
+    origins = [
+        f"http://localhost:{config.WEB_PORT}",
+        f"http://127.0.0.1:{config.WEB_PORT}",
+        f"http://localhost:{config.API_PORT}",
+        f"http://127.0.0.1:{config.API_PORT}",
+    ]
+    try:
+        for host in net_utils.get_public_hosts():
+            origins.append(f"http://{host}:{config.WEB_PORT}")
+            origins.append(f"http://{host}:{config.API_PORT}")
+    except Exception as exc:
+        logger.warning("Failed to determine local IP for CORS allowlist: %s", exc)
+    return list(dict.fromkeys(origins))
+
+
+allowed_origins = _build_allowed_origins()
 
 app.add_middleware(
     CORSMiddleware,
@@ -162,6 +169,20 @@ class PairTokenModel(StrictModel):
 
 class AudioDeviceChangeModel(AuthModel):
     device_id: DeviceIdStr
+
+
+AppPathStr = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=4096,
+    ),
+]
+
+
+class AppLaunchModel(AuthModel):
+    path: AppPathStr
 
 
 @dataclass
@@ -721,6 +742,34 @@ def audio_device(data: AudioDeviceChangeModel):
     }
 
 
+@app.post("/apps/recent")
+def recent_apps(data: AuthModel):
+    """Return recently used application shortcuts for quick launch."""
+    check(data.token, data.password)
+    return {
+        "apps": apps.list_recent(limit=12),
+    }
+
+
+@app.post("/apps/open")
+def open_app(data: AppLaunchModel):
+    """Launch an application by absolute executable path."""
+    check(data.token, data.password)
+    try:
+        apps.start(data.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    target = Path(data.path)
+    gui.add_log(f"App started: {target.stem}")
+    return {
+        "status": "ok",
+        "apps": apps.list_recent(limit=12, prioritized_paths=[str(target)]),
+    }
+
+
 @app.post("/logs")
 def logs(data: LogsModel):
     """Return recent logs (last N lines)."""
@@ -795,6 +844,18 @@ def _runtime_config_script() -> bytes:
 # -----------------------------
 # Веб-сервер для index.html
 # ────────────────────────────
+class _StaticHTTPServer(HTTPServer):
+    """HTTPServer without reverse-DNS lookup during bind."""
+
+    def server_bind(self) -> None:
+        # HTTPServer.server_bind() calls socket.getfqdn(host), which can stall
+        # for several seconds on Windows when reverse DNS is slow or broken.
+        TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
+
+
 def run_web():
     """Serve the `web/` folder via a simple HTTP server."""
     global _web_server
@@ -845,7 +906,7 @@ def run_web():
             return
 
     handler = functools.partial(_QuietStaticHandler, directory=web_dir)
-    _web_server = HTTPServer((config.WEB_HOST, port), handler)
+    _web_server = _StaticHTTPServer((config.WEB_HOST, port), handler)
     logger.info(f"Web controller available at http://{ip}:{port}")
     gui.add_log(f"Web controller: http://{ip}:{port}")
     gui.add_log(f"API: http://{ip}:{config.API_PORT}")

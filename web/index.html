@@ -261,6 +261,23 @@
         gap: 10px;
       }
 
+      .quick-apps {
+        display: grid;
+        gap: 10px;
+      }
+
+      .quick-app-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .btn-inline {
+        min-height: 36px;
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+
       .stats {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -310,6 +327,11 @@
 
         .row2 {
           grid-template-columns: 1fr 1fr;
+          align-items: end;
+        }
+
+        .quick-app-row {
+          grid-template-columns: minmax(0, 1fr) 118px;
           align-items: end;
         }
 
@@ -492,6 +514,58 @@
           <div style="height: 12px"></div>
 
           <div>
+            <div class="volhead">
+              <div class="section-title" style="margin: 0">Приложения</div>
+              <button class="btn btn-inline" type="button" onclick="fetchRecentApps()">
+                Обновить
+              </button>
+            </div>
+            <div class="quick-apps">
+              <div class="quick-app-row">
+                <label>
+                  <div class="label">Слот 1</div>
+                  <select id="quickAppSelect1" onchange="handleQuickAppSelection(0)"></select>
+                </label>
+                <button class="btn" id="quickAppBtn1" type="button" onclick="openQuickApp(0)">
+                  Открыть
+                </button>
+              </div>
+              <div class="quick-app-row">
+                <label>
+                  <div class="label">Слот 2</div>
+                  <select id="quickAppSelect2" onchange="handleQuickAppSelection(1)"></select>
+                </label>
+                <button class="btn" id="quickAppBtn2" type="button" onclick="openQuickApp(1)">
+                  Открыть
+                </button>
+              </div>
+              <div class="quick-app-row">
+                <label>
+                  <div class="label">Слот 3</div>
+                  <select id="quickAppSelect3" onchange="handleQuickAppSelection(2)"></select>
+                </label>
+                <button class="btn" id="quickAppBtn3" type="button" onclick="openQuickApp(2)">
+                  Открыть
+                </button>
+              </div>
+              <div class="quick-app-row">
+                <label>
+                  <div class="label">Слот 4</div>
+                  <select id="quickAppSelect4" onchange="handleQuickAppSelection(3)"></select>
+                </label>
+                <button class="btn" id="quickAppBtn4" type="button" onclick="openQuickApp(3)">
+                  Открыть
+                </button>
+              </div>
+            </div>
+            <div class="sub" id="quickAppsStatus">
+              Пока доступны только недавно открытые приложения.
+            </div>
+          </div>
+
+          <div style="height: 12px"></div>
+
+          <div>
             <div class="section-title">Питание</div>
             <div class="power-controls">
               <button class="btn" type="button" onclick="rebootPc()">
@@ -632,6 +706,8 @@
         Number(runtimeConfig.offlineRetryMaxMs || 30000),
       );
       const pairTokenStorageKey = "pcRemotePairToken";
+      const quickAppsStorageKey = "pcRemoteQuickApps";
+      const quickAppSlotCount = 4;
 
       let token = "";
       let pairToken = "";
@@ -642,6 +718,8 @@
       let activeTab = "main";
       let requiresPasswordSetup = false;
       let logCursor = 0;
+      let recentApps = [];
+      let quickAppSelections = [];
 
       let pollTimer = null;
       let toastTimer = null;
@@ -667,6 +745,103 @@
           return;
         }
         sessionStorage.setItem(pairTokenStorageKey, value);
+      }
+
+      function loadQuickAppSelections() {
+        const empty = Array.from({ length: quickAppSlotCount }, () => "");
+        try {
+          const raw = localStorage.getItem(quickAppsStorageKey);
+          const parsed = JSON.parse(raw || "[]");
+          if (!Array.isArray(parsed)) return empty;
+          return empty.map((_, index) => String(parsed[index] || ""));
+        } catch {
+          return empty;
+        }
+      }
+
+      function saveQuickAppSelections() {
+        try {
+          localStorage.setItem(quickAppsStorageKey, JSON.stringify(quickAppSelections));
+        } catch {
+          // ignore
+        }
+      }
+
+      function quickAppSelectId(index) {
+        return `quickAppSelect${index + 1}`;
+      }
+
+      function quickAppButtonId(index) {
+        return `quickAppBtn${index + 1}`;
+      }
+
+      function appNameFromPath(path) {
+        const parts = String(path || "").split(/[\\/]+/);
+        return parts[parts.length - 1] || path;
+      }
+
+      function normalizeRecentApps(items) {
+        return (Array.isArray(items) ? items : [])
+          .map((item) => ({
+            name: String((item || {}).name || "").trim(),
+            path: String((item || {}).path || "").trim(),
+          }))
+          .filter((item) => item.path);
+      }
+
+      function syncQuickAppButtonState(index) {
+        const button = $(quickAppButtonId(index));
+        const select = $(quickAppSelectId(index));
+        if (!button || !select) return;
+        button.disabled = !select.value;
+      }
+
+      function renderQuickAppOptions() {
+        const recentPaths = new Set(recentApps.map((item) => item.path));
+        const status = $("quickAppsStatus");
+
+        for (let index = 0; index < quickAppSlotCount; index += 1) {
+          const select = $(quickAppSelectId(index));
+          if (!select) continue;
+
+          const selectedPath = String(quickAppSelections[index] || "");
+          const options = selectedPath && !recentPaths.has(selectedPath)
+            ? [{ path: selectedPath, name: `${appNameFromPath(selectedPath)} (сохранено)` }, ...recentApps]
+            : recentApps.slice();
+
+          select.innerHTML = "";
+
+          const placeholder = document.createElement("option");
+          placeholder.value = "";
+          placeholder.textContent = recentApps.length
+            ? "Выбери приложение"
+            : "Недавних приложений нет";
+          select.appendChild(placeholder);
+
+          for (const app of options) {
+            const option = document.createElement("option");
+            option.value = app.path;
+            option.textContent = app.name || appNameFromPath(app.path);
+            select.appendChild(option);
+          }
+
+          const hasSelectedValue = options.some((item) => item.path === selectedPath);
+          select.value = hasSelectedValue ? selectedPath : "";
+          quickAppSelections[index] = select.value;
+          syncQuickAppButtonState(index);
+        }
+
+        saveQuickAppSelections();
+        status.textContent = recentApps.length
+          ? `Недавних приложений найдено: ${recentApps.length}.`
+          : "Недавно открытые приложения не найдены.";
+      }
+
+      function handleQuickAppSelection(index) {
+        const select = $(quickAppSelectId(index));
+        quickAppSelections[index] = select ? String(select.value || "") : "";
+        saveQuickAppSelections();
+        syncQuickAppButtonState(index);
       }
 
       function configurePinInputs() {
@@ -800,6 +975,70 @@
         }
       }
 
+      async function fetchRecentApps(options = {}) {
+        const silent = options.silent === true;
+        try {
+          const res = await apiPost("/apps/recent", {});
+          if (res.status === 403 || res.status === 409) {
+            if (!silent) toast("Сессия истекла");
+            await disconnect(true);
+            return;
+          }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          recentApps = normalizeRecentApps(data.apps);
+          renderQuickAppOptions();
+        } catch {
+          recentApps = [];
+          renderQuickAppOptions();
+          if (!silent) {
+            toast("Не удалось загрузить список приложений");
+          }
+        }
+      }
+
+      async function openQuickApp(index) {
+        const path = String(quickAppSelections[index] || "");
+        if (!path) {
+          toast("Выбери приложение");
+          return;
+        }
+
+        const button = $(quickAppButtonId(index));
+        if (button) button.disabled = true;
+
+        try {
+          const res = await apiPost("/apps/open", { path });
+          if (res.status === 403 || res.status === 409) {
+            toast("Сессия истекла");
+            await disconnect(true);
+            return;
+          }
+          if (res.status === 400) {
+            const data = await res.json().catch(() => ({}));
+            const detail = String(data.detail || "");
+            if (detail === "only executable applications are supported") {
+              toast("Поддерживаются только .exe");
+            } else {
+              toast("Приложение недоступно");
+            }
+            return;
+          }
+          if (!res.ok) throw new Error();
+
+          const data = await res.json();
+          if (Array.isArray(data.apps)) {
+            recentApps = normalizeRecentApps(data.apps);
+            renderQuickAppOptions();
+          }
+          toast("Приложение запущено");
+        } catch {
+          toast("Не удалось открыть приложение");
+        } finally {
+          syncQuickAppButtonState(index);
+        }
+      }
+
       async function apiPost(path, body) {
         const payload = { ...(body || {}) };
         if (token) payload.token = token;
@@ -919,6 +1158,7 @@
           const initialStatus = await fetchStatus();
           if (initialStatus.sessionExpired) return;
           if (initialStatus.ok) {
+            await fetchRecentApps({ silent: true });
             await fetchStats();
             await fetchLogs(true);
             pollFailureCount = 0;
@@ -963,6 +1203,7 @@
           const initialStatus = await fetchStatus();
           if (initialStatus.sessionExpired) return;
           if (initialStatus.ok) {
+            await fetchRecentApps({ silent: true });
             await fetchStats();
             await fetchLogs(true);
             pollFailureCount = 0;
@@ -1042,6 +1283,10 @@
         $("audioOutputPill").textContent = "Текущее: --";
         $("audioDeviceSelect").innerHTML = "";
         $("audioDeviceStatus").textContent = "Выбери устройство вывода.";
+        $("quickAppsStatus").textContent = "Пока доступны только недавно открытые приложения.";
+        for (let index = 0; index < quickAppSlotCount; index += 1) {
+          syncQuickAppButtonState(index);
+        }
         $("logsBox").value = "";
         logCursor = 0;
         pollFailureCount = 0;
@@ -1462,6 +1707,8 @@
       }
 
       configurePinInputs();
+      quickAppSelections = loadQuickAppSelections();
+      renderQuickAppOptions();
       $("apiHint").textContent = `Веб: http://${host}:${webPort} | v${appVersion}`;
 
       async function initializeApp() {

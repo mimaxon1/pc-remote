@@ -68,6 +68,7 @@ Run `dist\PC Remote\PC Remote.exe`. No Python is required on the target PC.
 ## Network
 
 - Designed for local LAN use
+- QR uses the best detected local host; if it opens an unreachable address, set `PC_REMOTE_PUBLIC_HOST=192.168.x.x` before launch to force the host used in QR and web links
 - If the phone cannot connect, allow ports `8000` and `8080` in Windows Firewall
 
 ## Troubleshooting

@@ -100,16 +100,15 @@ class TestHealthEndpoint:
             mock_manager.requires_password_setup.return_value = False
             mock_auth.return_value = mock_manager
             
-            # Simulate calling the health endpoint
             client = TestClient(main.app)
-            
             response = client.get("/health")
-            assert response.status_code == 200
-            data = response.json()
-            assert "status" in data
-            assert data["status"] == "healthy"
-            assert "auth_ready" in data
-            assert data["version"] == main.config.APP_VERSION
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+        assert data["status"] == "healthy"
+        assert "auth_ready" in data
+        assert data["version"] == main.config.APP_VERSION
 
 
 class TestRuntimeConfig:
@@ -119,6 +118,19 @@ class TestRuntimeConfig:
         assert f'"appVersion": "{main.config.APP_VERSION}"' in script
         assert f'"offlineRetryMinMs": {main.config.WEB_OFFLINE_RETRY_MIN_MS}' in script
         assert f'"offlineRetryMaxMs": {main.config.WEB_OFFLINE_RETRY_MAX_MS}' in script
+
+
+class TestStaticHttpServer:
+    def test_server_bind_skips_reverse_dns_lookup(self):
+        server = object.__new__(main._StaticHTTPServer)
+        server.server_address = ("0.0.0.0", 8080)
+
+        with patch("main.TCPServer.server_bind") as mock_bind, patch("main.socket.getfqdn", side_effect=AssertionError("should not be called")):
+            main._StaticHTTPServer.server_bind(server)
+
+        mock_bind.assert_called_once_with(server)
+        assert server.server_name == "0.0.0.0"
+        assert server.server_port == 8080
 
 
 class TestServerShutdown:
@@ -332,6 +344,45 @@ class TestLogsEndpoint:
             "reset": False,
         }
         mock_get_logs.assert_called_once_with(3, 10)
+
+
+class TestAppsEndpoints:
+    def test_recent_apps_endpoint_returns_quick_launch_candidates(self):
+        client = TestClient(main.app)
+        payload = [
+            {"name": "Telegram", "path": r"C:\Apps\Telegram.exe"},
+            {"name": "Discord", "path": r"C:\Apps\Discord.exe"},
+        ]
+
+        with patch("main.check"), patch("main.apps.list_recent", return_value=payload) as mock_list_recent:
+            response = client.post("/apps/recent", json={"token": "x" * 32})
+
+        assert response.status_code == 200
+        assert response.json() == {"apps": payload}
+        mock_list_recent.assert_called_once_with(limit=12)
+
+    def test_open_app_endpoint_starts_application_and_returns_refreshed_recent_apps(self):
+        client = TestClient(main.app)
+        app_path = r"C:\Apps\Notion.exe"
+        refreshed = [{"name": "Notion", "path": app_path}]
+
+        with patch("main.check"), patch("main.apps.start") as mock_start, patch("main.apps.list_recent", return_value=refreshed) as mock_list_recent, patch("main.gui.add_log") as mock_add_log:
+            response = client.post("/apps/open", json={"token": "x" * 32, "path": app_path})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "apps": refreshed}
+        mock_start.assert_called_once_with(app_path)
+        mock_list_recent.assert_called_once_with(limit=12, prioritized_paths=[app_path])
+        mock_add_log.assert_called_once_with("App started: Notion")
+
+    def test_open_app_endpoint_returns_bad_request_for_invalid_application(self):
+        client = TestClient(main.app)
+
+        with patch("main.check"), patch("main.apps.start", side_effect=ValueError("application path does not exist")):
+            response = client.post("/apps/open", json={"token": "x" * 32, "path": r"C:\missing.exe"})
+
+        assert response.status_code == 400
+        assert response.json() == {"detail": "application path does not exist"}
 
 
 if __name__ == "__main__":
