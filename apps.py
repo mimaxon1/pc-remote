@@ -119,21 +119,12 @@ def _normalize_app_item(item: Any) -> dict[str, str] | None:
     target = Path(path)
     if target.suffix.lower() != ".exe" or not target.is_file():
         return None
-    name = _clean_text(item.get("name")) or target.stem
-    args = _clean_text(item.get("args"))
-    aumid = _clean_text(item.get("aumid"))
-    if not _is_user_launch_candidate(target, name, aumid):
-        return None
-
-    normalized = {
-        "name": name,
-        "path": str(target),
-    }
-    if args:
-        normalized["args"] = args
-    if aumid:
-        normalized["aumid"] = aumid
-    return normalized
+    return _build_launch_item(
+        target,
+        name=item.get("name"),
+        args=item.get("args"),
+        aumid=item.get("aumid"),
+    )
 
 
 def _validate_executable_path(path: str | None) -> Path:
@@ -153,16 +144,33 @@ def _validate_launch_item(
     aumid: str | None = None,
 ) -> dict[str, str]:
     target = _validate_executable_path(path)
-    normalized = _normalize_app_item(
-        {
-            "name": name or target.stem,
-            "path": str(target),
-            "args": args,
-            "aumid": aumid,
-        }
-    )
+    normalized = _build_launch_item(target, name=name, args=args, aumid=aumid)
     if normalized is None:
         raise ValueError("application is not suitable for quick launch")
+    return normalized
+
+
+def _build_launch_item(
+    target: Path,
+    *,
+    name: str | None = None,
+    args: str | None = None,
+    aumid: str | None = None,
+) -> dict[str, str] | None:
+    normalized_name = _clean_text(name) or target.stem
+    normalized_args = _clean_text(args)
+    normalized_aumid = _clean_text(aumid)
+    if not _is_user_launch_candidate(target, normalized_name, normalized_aumid):
+        return None
+
+    normalized = {
+        "name": normalized_name,
+        "path": str(target),
+    }
+    if normalized_args:
+        normalized["args"] = normalized_args
+    if normalized_aumid:
+        normalized["aumid"] = normalized_aumid
     return normalized
 
 
