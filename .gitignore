@@ -19,6 +19,9 @@ logs/
 .pytest_cache/
 .test-auth-work/
 tmp*/
+tmp_*
+tmp_*.txt
+tmp_*.tsv
 
 .idea/
 .vscode/
