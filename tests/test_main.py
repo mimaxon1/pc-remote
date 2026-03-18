@@ -152,13 +152,14 @@ class TestRestartEndpoint:
     def test_restart_endpoint_schedules_clean_restart_for_remote_client(self):
         client = TestClient(main.app)
 
-        with patch("main.check") as mock_check, patch("main._request_application_restart", return_value=True) as mock_restart, patch("main.gui.add_log") as mock_add_log:
+        with patch("main.check") as mock_check, patch("main._request_application_restart", return_value=True) as mock_restart, patch("main.gui.set_phone_status") as mock_set_phone_status, patch("main.gui.add_log") as mock_add_log:
             response = client.post("/app/restart", json={"token": "x" * 32, "clean_start": True})
 
         assert response.status_code == 200
         assert response.json() == {"status": "restarting", "clean_start": True}
         mock_check.assert_called_once_with("x" * 32, None)
         mock_restart.assert_called_once_with(clean_start=True)
+        mock_set_phone_status.assert_called_once_with(False)
         mock_add_log.assert_called_once_with("Clean restart requested")
 
     def test_restart_endpoint_allows_local_request_without_auth(self):
@@ -182,6 +183,56 @@ class TestRestartEndpoint:
         assert response.json() == {"status": "already_restarting", "clean_start": True}
         mock_restart.assert_called_once_with(clean_start=True)
         mock_add_log.assert_not_called()
+
+
+class TestSessionStateEndpoints:
+    def test_change_password_clears_phone_status_after_revoking_sessions(self):
+        client = TestClient(main.app)
+        manager = MagicMock()
+        manager.requires_password_setup.return_value = False
+        manager.verify_password.return_value = True
+        manager.verify_token.return_value = True
+
+        with patch("main._auth_manager", return_value=manager), patch("main.gui.set_phone_status") as mock_set_phone_status, patch("main.gui.add_log") as mock_add_log:
+            response = client.post(
+                "/change_password",
+                json={"token": "x" * 32, "current_password": "1234", "new_password": "5678"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+        manager.change_password.assert_called_once_with("5678")
+        mock_set_phone_status.assert_called_once_with(False)
+        mock_add_log.assert_called_once_with("PIN changed")
+
+    def test_shutdown_returns_controlled_error_when_backend_fails(self):
+        client = TestClient(main.app)
+        manager = MagicMock()
+        manager.requires_password_setup.return_value = False
+        manager.verify_token.return_value = True
+
+        with patch("main._auth_manager", return_value=manager), patch("main.power.shutdown", side_effect=RuntimeError("boom")), patch("main.logger") as mock_logger, patch("main.gui.set_phone_status") as mock_set_phone_status:
+            response = client.post("/shutdown", json={"token": "x" * 32})
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Shutdown error"
+        mock_logger.exception.assert_called_once()
+        mock_set_phone_status.assert_not_called()
+
+    def test_reboot_clears_phone_status_on_success(self):
+        client = TestClient(main.app)
+        manager = MagicMock()
+        manager.requires_password_setup.return_value = False
+        manager.verify_token.return_value = True
+
+        with patch("main._auth_manager", return_value=manager), patch("main.power.reboot") as mock_reboot, patch("main.gui.set_phone_status") as mock_set_phone_status, patch("main.gui.add_log") as mock_add_log:
+            response = client.post("/reboot", json={"token": "x" * 32})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "rebooting"}
+        mock_reboot.assert_called_once_with()
+        mock_set_phone_status.assert_called_once_with(False)
+        mock_add_log.assert_called_once()
 
 
 class TestStaticHttpServer:
@@ -333,6 +384,35 @@ class TestLoginSecurity:
         assert success.json()["token"] == "token-1"
         assert after_reset.status_code == 403
         assert limiter.blocked_until("testclient") is None
+
+
+class TestLogoutEndpoint:
+    def test_logout_requires_valid_auth(self):
+        client = TestClient(main.app)
+        manager = MagicMock()
+        manager.requires_password_setup.return_value = False
+        manager.verify_token.return_value = False
+        manager.verify_password.return_value = False
+
+        with patch("main._auth_manager", return_value=manager):
+            response = client.post("/logout", json={})
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Invalid PIN or expired session"
+
+    def test_logout_revokes_token_and_clears_phone_status(self):
+        client = TestClient(main.app)
+        manager = MagicMock()
+        manager.requires_password_setup.return_value = False
+        manager.verify_token.return_value = True
+
+        with patch("main._auth_manager", return_value=manager), patch("main.gui.set_phone_status") as mock_set_phone_status:
+            response = client.post("/logout", json={"token": "x" * 32})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "bye"}
+        manager.tokens.revoke.assert_called_once_with("x" * 32)
+        mock_set_phone_status.assert_called_once_with(False)
 
 
 class TestSystemInfoCaching:

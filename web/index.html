@@ -2520,6 +2520,9 @@
             return;
           }
           if (!res.ok) throw new Error();
+          clearSessionToken();
+          stopPolling();
+          resetUi();
           toast(t("commandSent"));
         } catch {
           await markApiUnavailable();
@@ -2537,6 +2540,9 @@
             return;
           }
           if (!res.ok) throw new Error();
+          clearSessionToken();
+          stopPolling();
+          resetUi();
           toast(t("commandSent"));
         } catch {
           await markApiUnavailable();
@@ -2563,7 +2569,17 @@
             new_password,
           });
           if (res.status === 403) {
-            toast(t("currentPinWrong"));
+            const data = await readJsonSafely(res);
+            if (String(data.detail || "") === "Invalid session") {
+              toast(t("sessionExpired"));
+              await disconnect(true);
+            } else {
+              toast(t("currentPinWrong"));
+            }
+            return;
+          }
+          if (res.status === 409) {
+            toast(t("finishSetupThroughQr"));
             return;
           }
           if (!res.ok) throw new Error();

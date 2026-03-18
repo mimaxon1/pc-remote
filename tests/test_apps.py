@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -177,6 +178,20 @@ class TestStart:
         mock_popen.assert_called_once_with([str(target)], shell=False)
         assert result == {"name": "Telegram", "path": str(target)}
 
+    def test_start_preserves_arguments_when_startfile_is_unavailable(self, tmp_path: Path):
+        target = tmp_path / "chrome.exe"
+        target.write_text("", encoding="utf-8")
+
+        with patch.object(apps.os, "startfile", None, create=True), patch("apps.subprocess.Popen") as mock_popen:
+            result = apps.start(str(target), name="Telegram", args="--app-id=telegram")
+
+        mock_popen.assert_called_once_with([str(target), "--app-id=telegram"], shell=False)
+        assert result == {
+            "name": "Telegram",
+            "path": str(target),
+            "args": "--app-id=telegram",
+        }
+
     def test_window_action_minimizes_existing_window(self, tmp_path: Path):
         target = tmp_path / "Telegram.exe"
         target.write_text("", encoding="utf-8")
@@ -282,3 +297,24 @@ class TestPinnedApps:
             result = apps.list_pinned()
 
         assert result == [{"name": "Firefox", "path": str(existing)}]
+
+    def test_list_pinned_rewrites_storage_to_canonical_items(self, tmp_path: Path):
+        existing = tmp_path / "Firefox.exe"
+        existing.write_text("", encoding="utf-8")
+        storage = tmp_path / "pinned_apps.json"
+        storage.write_text(
+            json.dumps(
+                [
+                    {"name": "Firefox", "path": f'"{str(existing).replace("\\\\", "/")}"', "extra": True},
+                    {"name": "Firefox", "path": str(existing)},
+                    {"name": "Missing", "path": str(tmp_path / "Missing.exe")},
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        with patch("apps.config.app_dir", return_value=tmp_path):
+            result = apps.list_pinned()
+
+        assert result == [{"name": "Firefox", "path": str(existing)}]
+        assert json.loads(storage.read_text(encoding="utf-8")) == [{"name": "Firefox", "path": str(existing)}]

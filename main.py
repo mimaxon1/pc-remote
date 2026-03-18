@@ -725,9 +725,11 @@ def login(request: Request, data: LoginModel):
 @app.post("/logout")
 def logout(data: AuthModel):
     """Invalidate the current token (best-effort)."""
+    check(data.token, data.password)
     manager = _auth_manager()
     if data.token:
         manager.tokens.revoke(data.token)
+    gui.set_phone_status(False)
     return {"status": "bye"}
 
 
@@ -741,6 +743,7 @@ def restart_app(request: Request, data: AppRestartModel):
 
     scheduled = _request_application_restart(clean_start=bool(data.clean_start))
     if scheduled:
+        gui.set_phone_status(False)
         gui.add_log("Clean restart requested" if data.clean_start else "Restart requested")
         return {"status": "restarting", "clean_start": bool(data.clean_start)}
     return {"status": "already_restarting", "clean_start": bool(data.clean_start)}
@@ -763,6 +766,7 @@ def change_password(request: Request, data: ChangePasswordModel):
         raise HTTPException(status_code=403, detail="Active session required")
 
     manager.change_password(data.new_password)
+    gui.set_phone_status(False)
     gui.add_log("PIN changed")
     return {"status": "ok"}
 
@@ -1027,7 +1031,12 @@ def logs(data: LogsModel):
 def shutdown(data: AuthModel):
     """Shutdown the PC."""
     check(data.token, data.password)
-    power.shutdown()
+    try:
+        power.shutdown()
+    except Exception as exc:
+        logger.exception("Shutdown failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Shutdown error")
+    gui.set_phone_status(False)
     gui.add_log("ПК выключен")
     return {"status": "bye"}
 
@@ -1036,7 +1045,12 @@ def shutdown(data: AuthModel):
 def reboot(data: AuthModel):
     """Reboot the PC."""
     check(data.token, data.password)
-    power.reboot()
+    try:
+        power.reboot()
+    except Exception as exc:
+        logger.exception("Reboot failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Reboot error")
+    gui.set_phone_status(False)
     gui.add_log("ПК перезагружен")
     return {"status": "rebooting"}
 

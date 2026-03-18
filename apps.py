@@ -6,6 +6,7 @@ import json
 import logging
 import ntpath
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -426,9 +427,19 @@ def _read_pinned_apps_unlocked() -> list[dict[str, str]]:
         logger.warning("Pinned apps file %s must contain a JSON array", path)
         return []
 
+    items = _normalize_pinned_app_items(raw)
+    if raw != items:
+        try:
+            _write_pinned_apps_unlocked(items)
+        except Exception as exc:
+            logger.warning("Failed to rewrite pinned apps file %s: %s", path, exc)
+    return items
+
+
+def _normalize_pinned_app_items(raw_items: list[Any]) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     seen: set[str] = set()
-    for raw_item in raw:
+    for raw_item in raw_items:
         item = _normalize_app_item(raw_item)
         if item is None:
             continue
@@ -443,20 +454,7 @@ def _read_pinned_apps_unlocked() -> list[dict[str, str]]:
 
 
 def _write_pinned_apps_unlocked(items: list[dict[str, str]]) -> None:
-    normalized: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for raw_item in items:
-        item = _normalize_app_item(raw_item)
-        if item is None:
-            continue
-
-        key = _launch_signature(item)
-        if key in seen:
-            continue
-        seen.add(key)
-        normalized.append(item)
-
-    normalized = normalized[:_PINNED_APPS_LIMIT]
+    normalized = _normalize_pinned_app_items(items)
     path = _pinned_apps_path()
 
     if not normalized:
@@ -789,12 +787,22 @@ def _start_aumid(aumid: str) -> None:
     subprocess.Popen(["explorer.exe", fr"shell:AppsFolder\{aumid}"], shell=False)
 
 
+def _split_executable_args(argument_line: str) -> list[str]:
+    if not argument_line:
+        return []
+    try:
+        return [part for part in shlex.split(argument_line, posix=False) if part]
+    except ValueError:
+        return [argument_line]
+
+
 def _start_executable(target: Path, args: str | None = None) -> None:
     argument_line = _clean_text(args)
-    if argument_line and hasattr(os, "startfile"):
-        os.startfile(str(target), arguments=argument_line)
+    startfile = getattr(os, "startfile", None)
+    if argument_line and callable(startfile):
+        startfile(str(target), arguments=argument_line)
         return
-    subprocess.Popen([str(target)], shell=False)
+    subprocess.Popen([str(target), *_split_executable_args(argument_line)], shell=False)
 
 
 def window_action(
