@@ -167,6 +167,16 @@ class TestStart:
             "args": "--app-id=telegram",
         }
 
+    def test_start_accepts_quoted_executable_path(self, tmp_path: Path):
+        target = tmp_path / "Telegram.exe"
+        target.write_text("", encoding="utf-8")
+
+        with patch("apps.subprocess.Popen") as mock_popen:
+            result = apps.start(f'"{target}"')
+
+        mock_popen.assert_called_once_with([str(target)], shell=False)
+        assert result == {"name": "Telegram", "path": str(target)}
+
     def test_window_action_minimizes_existing_window(self, tmp_path: Path):
         target = tmp_path / "Telegram.exe"
         target.write_text("", encoding="utf-8")
@@ -220,6 +230,21 @@ class TestPinnedApps:
 
         assert removed is True
         assert result == []
+
+    def test_pin_deduplicates_path_variants_for_same_app(self, tmp_path: Path):
+        target = tmp_path / "Telegram.exe"
+        target.write_text("", encoding="utf-8")
+        variant_path = str(target).replace("\\", "/")
+        variant = f'"{variant_path}"'
+
+        with patch("apps.config.app_dir", return_value=tmp_path):
+            first = apps.pin(str(target))
+            second = apps.pin(variant)
+            result = apps.list_pinned()
+
+        assert first == {"name": "Telegram", "path": str(target)}
+        assert second == {"name": "Telegram", "path": str(target)}
+        assert result == [{"name": "Telegram", "path": str(target)}]
 
     def test_pin_rejects_non_user_processes(self, tmp_path: Path):
         target = tmp_path / "WireguardService.exe"

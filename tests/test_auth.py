@@ -80,6 +80,20 @@ class TestTokenStore:
         assert store.verify(token) is False
         assert store.get_pair_status(token) == (False, False)
 
+    def test_expired_pair_token_is_removed_from_all_token_state(self):
+        store = auth.TokenStore(ttl_seconds=1)
+        with patch("auth.time.time", return_value=100.0):
+            token, _ = store.issue_pair()
+
+        assert token in store._tokens
+        assert token in store._pair_tokens
+
+        with patch("auth.time.time", return_value=101.1):
+            assert store.mark_pair_opened(token) is False
+
+        assert token not in store._tokens
+        assert token not in store._pair_tokens
+
 
 class TestAuthManager:
     def setup_method(self):
@@ -160,8 +174,42 @@ class TestAuthManager:
         assert data["version"] == auth.SETTINGS_VERSION
         assert data["password"] == {"is_set": False}
 
+    @patch("auth.settings_path")
+    def test_invalid_password_block_raises_settings_error(self, mock_path):
+        settings_file = self.temp_dir / "settings.json"
+        mock_path.return_value = settings_file
+
+        password_hash = auth.PasswordHash.from_password("1234")
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "version": auth.SETTINGS_VERSION,
+                    "password": {
+                        "algorithm": password_hash.algorithm,
+                        "iterations": -1,
+                        "salt": password_hash.salt_b64,
+                        "hash": password_hash.hash_b64,
+                        "is_set": True,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(auth.SettingsError, match="invalid password block"):
+            auth.AuthManager()
+
 
 class TestPersistedSettingsCleanup:
+    def test_atomic_write_json_removes_temp_file_after_replace_failure(self, tmp_path: Path):
+        target = tmp_path / "settings.json"
+
+        with patch("auth.os.replace", side_effect=OSError("replace failed")):
+            with pytest.raises(OSError, match="replace failed"):
+                auth._atomic_write_json(target, {"ok": True})
+
+        assert list(tmp_path.iterdir()) == []
+
     def test_remove_persisted_settings_deletes_existing_files(self, tmp_path: Path):
         current = tmp_path / "current" / "settings.json"
         legacy = tmp_path / "legacy" / "settings.json"

@@ -254,10 +254,23 @@ def _open_logs() -> None:
     root = _ensure_root()
     win = tk.Toplevel(root)
     win.title("Логи ассистента")
-    text = tk.Text(win, width=80, height=20)
-    text.pack()
+    frame = tk.Frame(win)
+    frame.pack(fill=tk.BOTH, expand=True)
+    scrollbar = tk.Scrollbar(frame)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    text = tk.Text(
+        frame,
+        width=88,
+        height=24,
+        wrap=tk.WORD,
+        yscrollcommand=scrollbar.set,
+    )
+    text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.config(command=text.yview)
     for line in _log_messages():
         text.insert(tk.END, line + "\n")
+    text.configure(state=tk.DISABLED)
+    text.see(tk.END)
 
 
 def show_logs(icon: object, item: object) -> None:

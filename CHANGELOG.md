@@ -7,6 +7,14 @@
 - added GitHub Actions test automation plus issue and pull request templates
 - rewrote the README to present the project more cleanly on GitHub
 
+## v1.4.1
+
+- hardened login rate limiting with `Retry-After` support and clearer controller feedback during PIN lockouts
+- made web session restore more resilient across refreshes, temporary API outages, and reconnect races
+- normalized quick app paths to better handle quoted executables and prevent duplicate pinned entries
+- tightened auth/settings cleanup around expired QR tokens and failed settings writes
+- improved tray log viewer UX and slimmed packaged builds by excluding unused optional server modules
+
 ## v1.4.0
 
 - added quick app actions in the web controller for opening, minimizing, and closing user apps

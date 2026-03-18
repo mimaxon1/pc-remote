@@ -785,6 +785,8 @@
         Number(runtimeConfig.offlineRetryMaxMs || 30000),
       );
       const pairTokenStorageKey = "pcRemotePairToken";
+      const sessionTokenStorageKey = "pcRemoteSessionToken";
+      const activeTabStorageKey = "pcRemoteActiveTab";
       const recentAppPreviewCount = 4;
 
       let token = "";
@@ -800,6 +802,7 @@
       let pinnedApps = [];
 
       let pollTimer = null;
+      let reconnectTimer = null;
       let toastTimer = null;
       let pollFailureCount = 0;
       let apiOffline = false;
@@ -889,17 +892,19 @@
           resetBtn: "Сбросить и перезапустить",
           statusConnected: "Подключено",
           statusOffline: "Оффлайн",
-          statusOfflineRetry: "API недоступен, повтор через {seconds}с",
+          statusOfflineRetry: "API недоступен, повтор через {duration}",
           sessionExpired: "Сессия истекла",
           sessionExpiredReconnect: "Сессия истекла, подключись заново",
           connectionRestored: "Соединение восстановлено",
           enterPin: "Введи PIN",
           finishSetupThroughQr: "Сначала заверши настройку через QR",
           wrongPin: "Неверный PIN",
+          loginRateLimited: "Слишком много попыток. Повтори через {duration}",
+          loginRateLimitedGeneric: "Слишком много попыток. Подожди и попробуй снова",
           connectError: "Ошибка подключения",
           pinDigitsExact: "PIN должен быть из {count} цифр",
           newPinDigitsExact: "Новый PIN должен быть из {count} цифр",
-          pinDigitsPlaceholder: "{count} цифры",
+          pinDigitsPlaceholder: "{count} цифр",
           reopenQr: "Открой QR заново",
           qrExpired: "QR-токен истек, открой новый",
           setupError: "Ошибка первичной настройки",
@@ -1028,13 +1033,15 @@
           resetBtn: "Reset and Restart",
           statusConnected: "Connected",
           statusOffline: "Offline",
-          statusOfflineRetry: "API unavailable, retry in {seconds}s",
+          statusOfflineRetry: "API unavailable, retry in {duration}",
           sessionExpired: "Session expired",
           sessionExpiredReconnect: "Session expired, connect again",
           connectionRestored: "Connection restored",
           enterPin: "Enter PIN",
           finishSetupThroughQr: "Finish setup via QR first",
           wrongPin: "Wrong PIN",
+          loginRateLimited: "Too many attempts. Try again in {duration}",
+          loginRateLimitedGeneric: "Too many attempts. Wait and try again",
           connectError: "Connection error",
           pinDigitsExact: "PIN must be {count} digits",
           newPinDigitsExact: "New PIN must be {count} digits",
@@ -1136,6 +1143,26 @@
         return value === "en" ? "en" : "ru";
       }
 
+      function normalizeTab(value) {
+        return value === "info" || value === "settings" ? value : "main";
+      }
+
+      function formatShortDuration(seconds) {
+        const totalSeconds = Math.max(1, Math.ceil(Number(seconds) || 0));
+        const minutes = Math.floor(totalSeconds / 60);
+        const restSeconds = totalSeconds % 60;
+        if (currentLanguage === "en") {
+          if (minutes > 0) {
+            return `${minutes}m ${restSeconds}s`;
+          }
+          return `${totalSeconds}s`;
+        }
+        if (minutes > 0) {
+          return `${minutes} мин ${restSeconds} сек`;
+        }
+        return `${totalSeconds} сек`;
+      }
+
       function t(key, vars = {}) {
         const dictionary = translations[currentLanguage] || translations.ru;
         let template = dictionary[key];
@@ -1182,9 +1209,37 @@
         sessionStorage.setItem(pairTokenStorageKey, value);
       }
 
+      function storeSessionToken(value) {
+        const nextValue = String(value || "").trim();
+        if (!nextValue) {
+          sessionStorage.removeItem(sessionTokenStorageKey);
+          return;
+        }
+        sessionStorage.setItem(sessionTokenStorageKey, nextValue);
+      }
+
+      function assignSessionToken(value) {
+        token = String(value || "").trim();
+        storeSessionToken(token);
+        return token;
+      }
+
+      function clearSessionToken() {
+        assignSessionToken("");
+      }
+
+      function storeActiveTab(value) {
+        localStorage.setItem(activeTabStorageKey, normalizeTab(value));
+      }
+
       function appNameFromPath(path) {
         const parts = String(path || "").split(/[\\/]+/);
         return parts[parts.length - 1] || path;
+      }
+
+      function normalizePathLike(path) {
+        const trimmed = String(path || "").trim().replace(/^["']|["']$/g, "");
+        return trimmed.replace(/\//g, "\\").toLowerCase();
       }
 
       function normalizeRecentApps(items) {
@@ -1204,7 +1259,7 @@
       }
 
       function appPathKey(path) {
-        return String(path || "").trim().toLowerCase();
+        return normalizePathLike(path);
       }
 
       function appLaunchKey(app) {
@@ -1471,7 +1526,7 @@
           if (!input) continue;
           input.maxLength = pinLength;
           input.pattern = `\\d{${pinLength}}`;
-          input.placeholder = "•".repeat(pinLength);
+          input.placeholder = "\u2022".repeat(pinLength);
         }
         for (const id of ["setupPassword", "newPassword"]) {
           const input = $(id);
@@ -1519,9 +1574,9 @@
         apiOffline = true;
         lastOfflineRetryMs = retryMs;
         if ($("panel").hidden) return;
-        const seconds = Math.max(1, Math.ceil(retryMs / 1000));
+        const duration = formatShortDuration(retryMs / 1000);
         $("statusTitle").textContent = t("statusOffline");
-        $("statusSub").textContent = t("statusOfflineRetry", { seconds });
+        $("statusSub").textContent = t("statusOfflineRetry", { duration });
         setDot(false);
       }
 
@@ -1537,6 +1592,21 @@
       function clearPollTimer() {
         if (pollTimer) clearTimeout(pollTimer);
         pollTimer = null;
+      }
+
+      function clearReconnectTimer() {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+
+      function scheduleSessionReconnect(delayMs) {
+        clearReconnectTimer();
+        if (!token || !$("panel").hidden) return;
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          if (!token || !$("panel").hidden) return;
+          void connectWithToken({ silent: true });
+        }, Math.max(0, Number(delayMs) || offlineRetryMinMs));
       }
 
       function nextOfflineDelayMs() {
@@ -1582,22 +1652,34 @@
         return true;
       }
 
-      function showTab(name) {
-        activeTab = name;
-        const isMain = name === "main";
-        const isInfo = name === "info";
-        const isSettings = name === "settings";
+      async function readJsonSafely(res) {
+        try {
+          return await res.json();
+        } catch {
+          return {};
+        }
+      }
+
+      function showTab(name, options = {}) {
+        activeTab = normalizeTab(name);
+        if (options.persist !== false) {
+          storeActiveTab(activeTab);
+        }
+        const isMain = activeTab === "main";
+        const isInfo = activeTab === "info";
+        const isSettings = activeTab === "settings";
+        const canLoadTabData = !$("panel").hidden && !!token;
         $("tabMain").hidden = !isMain;
         $("tabInfo").hidden = !isInfo;
         $("tabSettings").hidden = !isSettings;
         $("tabBtnMain").classList.toggle("active", isMain);
         $("tabBtnInfo").classList.toggle("active", isInfo);
         $("tabBtnSettings").classList.toggle("active", isSettings);
-        if (isInfo) {
+        if (canLoadTabData && isInfo) {
           void fetchStats();
           void fetchAudioDevices(true);
         }
-        if (isSettings) {
+        if (canLoadTabData && isSettings) {
           void fetchLogs(true);
         }
       }
@@ -1616,9 +1698,10 @@
           applyAppsPayload(data);
           renderRecentApps();
         } catch {
-          recentApps = [];
-          pinnedApps = [];
-          renderRecentApps();
+          if (!recentApps.length && !pinnedApps.length) {
+            renderRecentApps();
+          }
+          await markApiUnavailable();
           if (!silent) {
             toast(t("appsLoadFailed"));
           }
@@ -1664,6 +1747,7 @@
               : t("openingAppGeneric"),
           );
         } catch {
+          await markApiUnavailable();
           toast(t("openAppFailed"));
         } finally {
           renderRecentApps();
@@ -1707,6 +1791,7 @@
             toast(t("appClosing", { name: appLabel(app) }));
           }
         } catch {
+          await markApiUnavailable();
           toast(t("appActionFailedGeneric"));
         } finally {
           renderRecentApps();
@@ -1755,6 +1840,7 @@
               : t("appPinned", { name: appLabel(app) }),
           );
         } catch {
+          await markApiUnavailable();
           toast(wasPinned ? t("appUnpinFailed") : t("appPinFailed"));
         } finally {
           renderRecentApps();
@@ -1762,9 +1848,10 @@
         }
       }
 
-      async function apiPost(path, body) {
+      async function apiPost(path, body, options = {}) {
         const payload = { ...(body || {}) };
-        if (token) payload.token = token;
+        const withToken = options.withToken !== false;
+        if (withToken && token) payload.token = token;
         return fetch(apiUrl(path), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1837,6 +1924,7 @@
       }
 
       function startPolling(delayMs = statusPollMs) {
+        clearReconnectTimer();
         scheduleNextPoll(delayMs);
       }
 
@@ -1849,9 +1937,11 @@
         const password = $("password").value.trim();
         if (!password) return toast(t("enterPin"));
 
+        clearReconnectTimer();
+        let shouldRetryWithSession = false;
         btn.disabled = true;
         try {
-          const loginRes = await apiPost("/login", { password });
+          const loginRes = await apiPost("/login", { password }, { withToken: false });
           if (loginRes.status === 409) {
             requiresPasswordSetup = true;
             showEntryCard("setupBlocked");
@@ -1862,10 +1952,23 @@
             toast(t("wrongPin"));
             return;
           }
+          if (loginRes.status === 429) {
+            const data = await readJsonSafely(loginRes);
+            const retryAfterSeconds = Number(
+              data.retry_after_seconds ?? loginRes.headers.get("Retry-After"),
+            );
+            toast(
+              Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+                ? t("loginRateLimited", { duration: formatShortDuration(retryAfterSeconds) })
+                : t("loginRateLimitedGeneric"),
+            );
+            return;
+          }
           if (!loginRes.ok) throw new Error();
 
           const loginData = await loginRes.json();
-          token = String(loginData.token || "");
+          assignSessionToken(loginData.token);
+          shouldRetryWithSession = !!token;
           pairToken = "";
           storePairToken("");
           if (!token) throw new Error();
@@ -1875,7 +1978,7 @@
 
           $("auth").hidden = true;
           $("panel").hidden = false;
-          showTab("main");
+          showTab(activeTab);
           setConnectedState();
 
           const initialStatus = await fetchStatus();
@@ -1894,6 +1997,10 @@
 
           $("password").value = "";
         } catch {
+          if (shouldRetryWithSession && token) {
+            pollFailureCount = Math.max(1, pollFailureCount + 1);
+            scheduleSessionReconnect(nextOfflineDelayMs());
+          }
           toast(t("connectError"));
           setDot(false);
         } finally {
@@ -1903,15 +2010,27 @@
       async function connectWithToken(options = {}) {
         if (!token) return;
         const completePair = options.completePair !== false;
+        const silent = options.silent === true;
         try {
           const res = await apiPost("/connect", {});
           if (res.status === 409) {
             requiresPasswordSetup = true;
+            if (!pairToken) {
+              clearSessionToken();
+            }
             showEntryCard(pairToken ? "setup" : "setupBlocked");
+            return;
+          }
+          if (res.status === 403) {
+            clearSessionToken();
+            pairToken = "";
+            storePairToken("");
+            resetUi();
             return;
           }
           if (!res.ok) throw new Error();
 
+          clearReconnectTimer();
           if (completePair && pairToken) {
             await notifyQrCompleted(pairToken);
             pairToken = "";
@@ -1920,7 +2039,7 @@
 
           showEntryCard("");
           $("panel").hidden = false;
-          showTab("main");
+          showTab(activeTab);
           setConnectedState();
 
           const initialStatus = await fetchStatus();
@@ -1937,10 +2056,17 @@
             startPolling(offlineRetryMinMs);
           }
         } catch {
-          token = "";
-          pairToken = "";
-          storePairToken("");
-          resetUi();
+          stopPolling();
+          $("panel").hidden = true;
+          showEntryCard(requiresPasswordSetup ? (pairToken ? "setup" : "setupBlocked") : "auth");
+          setDot(false);
+          if (token) {
+            pollFailureCount = Math.max(1, pollFailureCount + 1);
+            scheduleSessionReconnect(nextOfflineDelayMs());
+          }
+          if (!silent) {
+            toast(t("connectError"));
+          }
         }
       }
       async function completeSetup() {
@@ -1955,6 +2081,7 @@
           return;
         }
 
+        clearReconnectTimer();
         btn.disabled = true;
         try {
           const res = await fetch(apiUrl("/setup_password"), {
@@ -1965,7 +2092,7 @@
           if (res.status === 403) {
             toast(t("qrExpired"));
             showEntryCard("setupBlocked");
-            token = "";
+            clearSessionToken();
             pairToken = "";
             storePairToken("");
             return;
@@ -1977,7 +2104,7 @@
           if (!res.ok) throw new Error();
 
           const data = await res.json();
-          token = String(data.token || "");
+          assignSessionToken(data.token);
           pairToken = "";
           storePairToken("");
           requiresPasswordSetup = false;
@@ -1990,9 +2117,11 @@
         }
       }
       function resetUi() {
+        clearReconnectTimer();
         $("panel").hidden = true;
         showEntryCard(requiresPasswordSetup ? (pairToken ? "setup" : "setupBlocked") : "auth");
-        showTab("main");
+        activeTab = normalizeTab(localStorage.getItem(activeTabStorageKey));
+        showTab(activeTab, { persist: false });
         $("statusTitle").textContent = t("disconnected");
         $("statusSub").textContent = "";
         renderInfoPlaceholders();
@@ -2021,6 +2150,7 @@
       }
 
       async function disconnect(skipServer = false) {
+        clearReconnectTimer();
         stopPolling();
         try {
           if (!skipServer && token) await apiPost("/disconnect", {});
@@ -2028,7 +2158,7 @@
         } catch {
           // ignore
         }
-        token = "";
+        clearSessionToken();
         pairToken = "";
         storePairToken("");
         resetUi();
@@ -2439,7 +2569,7 @@
           if (!res.ok) throw new Error();
 
           toast(t("pinChanged"));
-          token = "";
+          clearSessionToken();
           stopPolling();
           resetUi();
         } catch {
@@ -2464,7 +2594,7 @@
           toast(t("appRestarting"));
           requiresPasswordSetup = true;
           stopPolling();
-          token = "";
+          clearSessionToken();
           pairToken = "";
           storePairToken("");
           resetUi();
@@ -2478,6 +2608,7 @@
       applyLocalization();
 
       async function initializeApp() {
+        activeTab = normalizeTab(localStorage.getItem(activeTabStorageKey));
         const params = new URLSearchParams(window.location.search);
         const tokenFromUrl = params.get("token");
         if (tokenFromUrl) {
@@ -2485,6 +2616,7 @@
           window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
         }
         const storedPairToken = sessionStorage.getItem(pairTokenStorageKey);
+        const storedSessionToken = sessionStorage.getItem(sessionTokenStorageKey);
         try {
           const authState = await fetchAuthState();
           requiresPasswordSetup = !!authState.requires_password_setup;
@@ -2500,9 +2632,17 @@
             showEntryCard("setup");
             return;
           }
-          await connectWithToken();
+          await connectWithToken({ silent: true });
           return;
         }
+
+        if (storedSessionToken && !requiresPasswordSetup) {
+          assignSessionToken(storedSessionToken);
+          await connectWithToken({ completePair: false, silent: true });
+          return;
+        }
+
+        clearSessionToken();
 
         showEntryCard(requiresPasswordSetup ? "setupBlocked" : "auth");
       }

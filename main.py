@@ -3,6 +3,7 @@ import argparse
 import ctypes
 import functools
 import json
+import math
 import os
 import socket
 from socketserver import TCPServer
@@ -196,6 +197,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
     allow_credentials=True,
+    expose_headers=["Retry-After"],
 )
 
 # -----------------------------
@@ -259,6 +261,7 @@ class LogsModel(AuthModel):
 
 class LoginModel(StrictModel):
     password: PinStr
+    token: Optional[TokenStr] = None
 
 
 class ChangePasswordModel(AuthModel):
@@ -341,6 +344,9 @@ class LoginRateLimiter:
         self._lock = threading.Lock()
         self._state: dict[str, LoginAttemptState] = {}
 
+    def now(self) -> float:
+        return float(self._now_fn())
+
     def _prune_locked(self, client_ip: str, now: float) -> LoginAttemptState | None:
         entry = self._state.get(client_ip)
         if entry is None:
@@ -383,7 +389,7 @@ class LoginRateLimiter:
             attempts = list(entry.attempts)
             attempts.append(now)
             entry.attempts = attempts
-            if len(attempts) > self._max_attempts:
+            if len(attempts) >= self._max_attempts:
                 blocked_until = now + self._block_seconds
                 entry.blocked_until = blocked_until
                 self._state[client_ip] = entry
@@ -399,6 +405,26 @@ class LoginRateLimiter:
 
 
 LOGIN_RATE_LIMITER = LoginRateLimiter()
+
+
+def _rate_limit_retry_after_seconds(blocked_until: float | None, now: float | None = None) -> int | None:
+    if blocked_until is None:
+        return None
+    current_time = float(time.time() if now is None else now)
+    remaining = max(0.0, float(blocked_until) - current_time)
+    if remaining <= 0:
+        return None
+    return max(1, int(math.ceil(remaining)))
+
+
+def _login_rate_limited_response(blocked_until: float | None, now: float | None = None) -> JSONResponse:
+    payload: dict[str, object] = {"detail": "Too many login attempts. Try again later."}
+    headers: dict[str, str] = {}
+    retry_after_seconds = _rate_limit_retry_after_seconds(blocked_until, now=now)
+    if retry_after_seconds is not None:
+        payload["retry_after_seconds"] = retry_after_seconds
+        headers["Retry-After"] = str(retry_after_seconds)
+    return JSONResponse(status_code=429, content=payload, headers=headers)
 
 
 def _auth_manager() -> auth.AuthManager:
@@ -680,15 +706,16 @@ def login(request: Request, data: LoginModel):
     if manager.requires_password_setup():
         logger.warning("Login attempt before setup | IP: %s", client_ip)
         raise HTTPException(status_code=409, detail="PIN setup is not complete yet")
-    if LOGIN_RATE_LIMITER.blocked_until(client_ip):
+    blocked_until = LOGIN_RATE_LIMITER.blocked_until(client_ip)
+    if blocked_until:
         logger.critical("Brute force login blocked | IP: %s", client_ip)
-        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+        return _login_rate_limited_response(blocked_until, now=LOGIN_RATE_LIMITER.now())
     if not manager.verify_password(data.password):
         blocked_until = LOGIN_RATE_LIMITER.record_failure(client_ip)
         logger.warning("Login failed: invalid PIN | IP: %s", client_ip)
         if blocked_until:
             logger.critical("Brute force protection triggered | IP: %s", client_ip)
-            raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+            return _login_rate_limited_response(blocked_until, now=LOGIN_RATE_LIMITER.now())
         raise HTTPException(status_code=403, detail="Invalid PIN")
     LOGIN_RATE_LIMITER.reset(client_ip)
     token, expires_in = manager.issue_token()

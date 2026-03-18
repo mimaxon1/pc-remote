@@ -17,7 +17,7 @@
   <img src="https://img.shields.io/badge/python-3.13%2B-3776AB" alt="Python">
 </p>
 
-Current release target: `v1.4.0`
+Current release target: `v1.4.1`
 
 ## Overview
 

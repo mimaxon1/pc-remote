@@ -28,7 +28,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 APP_NAME = "PC Remote"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 LOGGER_NAME = APP_NAME
 SETTINGS_FILENAME = "settings.json"
 LOG_FILE_NAME = "pc-remote.log"

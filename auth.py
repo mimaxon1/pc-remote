@@ -186,12 +186,20 @@ class PasswordHash:
 def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     tmp_dir = path.parent
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", delete=False, dir=tmp_dir, encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-        tmp_name = f.name
-    os.replace(tmp_name, path)
+    tmp_name = ""
+    try:
+        with tempfile.NamedTemporaryFile("w", delete=False, dir=tmp_dir, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+            tmp_name = f.name
+        os.replace(tmp_name, path)
+    finally:
+        if tmp_name and os.path.exists(tmp_name):
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
 
 
 def _load_settings() -> dict[str, Any]:
@@ -240,6 +248,20 @@ def clear_password_setup_state() -> None:
     _save_settings(settings)
 
 
+def _validate_loaded_password_hash(ph: PasswordHash) -> None:
+    if ph.algorithm != PBKDF2_ALGO:
+        raise SettingsError("settings.json has an unsupported password algorithm")
+    if int(ph.iterations) <= 0:
+        raise SettingsError("settings.json has an invalid password block")
+    try:
+        salt = _b64d(ph.salt_b64)
+        digest = _b64d(ph.hash_b64)
+    except Exception as exc:
+        raise SettingsError("settings.json has an invalid password block") from exc
+    if not salt or not digest:
+        raise SettingsError("settings.json has an invalid password block")
+
+
 def _parse_password_hash(raw: dict[str, Any]) -> tuple[Optional[PasswordHash], bool]:
     pw = raw.get("password")
     if pw is None:
@@ -256,14 +278,16 @@ def _parse_password_hash(raw: dict[str, Any]) -> tuple[Optional[PasswordHash], b
         return None, True
 
     try:
-        return PasswordHash(
+        ph = PasswordHash(
             algorithm=str(pw.get("algorithm", "")),
             iterations=int(pw.get("iterations", 0)),
             salt_b64=str(pw.get("salt", "")),
             hash_b64=str(pw.get("hash", "")),
-        ), False
+        )
     except Exception as exc:
         raise SettingsError("settings.json has an invalid password block") from exc
+    _validate_loaded_password_hash(ph)
+    return ph, False
 
 
 def load_or_init_password_hash() -> tuple[Optional[PasswordHash], bool]:
@@ -306,6 +330,10 @@ class TokenStore:
             }
         return token, self._ttl
 
+    def _discard_locked(self, token: str) -> None:
+        self._tokens.pop(token, None)
+        self._pair_tokens.pop(token, None)
+
     def issue(self) -> tuple[str, int]:
         with self._lock:
             return self._issue_locked(track_pair=False)
@@ -325,8 +353,7 @@ class TokenStore:
                 return False
             expires_at = float(item["expires_at"])
             if expires_at <= now:
-                self._tokens.pop(token, None)
-                self._pair_tokens.pop(token, None)
+                self._discard_locked(token)
                 return False
             return True
 
@@ -339,7 +366,7 @@ class TokenStore:
             if item is None:
                 return False
             if float(item["expires_at"]) <= now:
-                self._pair_tokens.pop(token, None)
+                self._discard_locked(token)
                 return False
             item["opened"] = True
             return True
@@ -353,7 +380,7 @@ class TokenStore:
             if item is None:
                 return False
             if float(item["expires_at"]) <= now:
-                self._pair_tokens.pop(token, None)
+                self._discard_locked(token)
                 return False
             item["completed"] = True
             return True
@@ -367,14 +394,13 @@ class TokenStore:
             if item is None:
                 return False, False
             if float(item["expires_at"]) <= now:
-                self._pair_tokens.pop(token, None)
+                self._discard_locked(token)
                 return False, False
             return bool(item.get("opened")), bool(item.get("completed"))
 
     def revoke(self, token: str) -> None:
         with self._lock:
-            self._tokens.pop(token, None)
-            self._pair_tokens.pop(token, None)
+            self._discard_locked(token)
 
     def clear(self) -> None:
         with self._lock:

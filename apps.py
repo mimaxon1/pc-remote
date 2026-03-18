@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import ntpath
 import os
 import subprocess
 import sys
@@ -69,11 +70,21 @@ _EXCLUDED_PROCESS_NAMES = {
 
 
 def _normalize_path_key(value: str) -> str:
-    return str(value or "").strip().casefold()
+    text = _strip_wrapping_quotes(value)
+    if not text:
+        return ""
+    return ntpath.normpath(text.replace("/", "\\")).casefold()
 
 
 def _powershell_quote(value: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def _strip_wrapping_quotes(value: Any) -> str:
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        return text[1:-1].strip()
+    return text
 
 
 def _clean_text(value: Any) -> str:
@@ -112,13 +123,17 @@ def _normalize_app_item(item: Any) -> dict[str, str] | None:
     if not isinstance(item, dict):
         return None
 
-    path = _clean_text(item.get("path"))
+    path = _strip_wrapping_quotes(item.get("path"))
     if not path:
         return None
 
     target = Path(path)
     if target.suffix.lower() != ".exe" or not target.is_file():
         return None
+    try:
+        target = target.resolve()
+    except Exception:
+        pass
     return _build_launch_item(
         target,
         name=item.get("name"),
@@ -128,12 +143,15 @@ def _normalize_app_item(item: Any) -> dict[str, str] | None:
 
 
 def _validate_executable_path(path: str | None) -> Path:
-    target = Path(str(path or "").strip())
+    target = Path(_strip_wrapping_quotes(path))
     if not target.is_file():
         raise ValueError("application path does not exist")
     if target.suffix.lower() != ".exe":
         raise ValueError("only executable applications are supported")
-    return target
+    try:
+        return target.resolve()
+    except Exception:
+        return target
 
 
 def _validate_launch_item(

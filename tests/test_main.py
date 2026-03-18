@@ -245,6 +245,10 @@ class TestServerShutdown:
 class TestLoginSecurity:
     """Test login endpoint audit logging and brute-force protection."""
 
+    def test_rate_limit_helper_rounds_up_remaining_seconds(self):
+        assert main._rate_limit_retry_after_seconds(110.2, now=100.0) == 11
+        assert main._rate_limit_retry_after_seconds(100.0, now=100.0) is None
+
     def test_login_before_setup_logs_warning(self):
         client = TestClient(main.app)
         manager = MagicMock()
@@ -260,7 +264,23 @@ class TestLoginSecurity:
         mock_logger.warning.assert_called_once_with("Login attempt before setup | IP: %s", "testclient")
         assert limiter.blocked_until("testclient") is None
 
-    def test_login_rate_limit_blocks_after_sixth_invalid_pin(self):
+    def test_login_accepts_legacy_request_with_token_field(self):
+        client = TestClient(main.app)
+        manager = MagicMock()
+        manager.requires_password_setup.return_value = False
+        manager.verify_password.return_value = True
+        manager.issue_token.return_value = ("token-1", 60)
+        limiter = main.LoginRateLimiter(now_fn=lambda: 100.0)
+
+        with patch("main._auth_manager", return_value=manager), patch("main.LOGIN_RATE_LIMITER", limiter), patch("main.gui.add_log") as mock_add_log:
+            response = client.post("/login", json={"password": "1234", "token": "x" * 32})
+
+        assert response.status_code == 200
+        assert response.json() == {"token": "token-1", "expires_in": 60}
+        manager.verify_password.assert_called_once_with("1234")
+        mock_add_log.assert_called_once_with("Login: ok")
+
+    def test_login_rate_limit_blocks_on_fifth_invalid_pin(self):
         client = TestClient(main.app)
         manager = MagicMock()
         manager.requires_password_setup.return_value = False
@@ -269,7 +289,7 @@ class TestLoginSecurity:
         limiter = main.LoginRateLimiter(now_fn=clock.now)
 
         with patch("main._auth_manager", return_value=manager), patch("main.LOGIN_RATE_LIMITER", limiter), patch("main.logger") as mock_logger:
-            for _ in range(main.config.LOGIN_ATTEMPT_LIMIT):
+            for _ in range(main.config.LOGIN_ATTEMPT_LIMIT - 1):
                 response = client.post("/login", json={"password": "1234"})
                 assert response.status_code == 403
                 clock.advance(1)
@@ -280,6 +300,9 @@ class TestLoginSecurity:
         assert blocked_response.status_code == 429
         assert retry_response.status_code == 429
         assert blocked_response.json()["detail"] == "Too many login attempts. Try again later."
+        assert blocked_response.json()["retry_after_seconds"] == main.config.LOGIN_BLOCK_SECONDS
+        assert blocked_response.headers["Retry-After"] == str(main.config.LOGIN_BLOCK_SECONDS)
+        assert retry_response.json()["retry_after_seconds"] == main.config.LOGIN_BLOCK_SECONDS
         critical_messages = [call.args[0] for call in mock_logger.critical.call_args_list]
         assert "Brute force protection triggered | IP: %s" in critical_messages
         assert "Brute force login blocked | IP: %s" in critical_messages
