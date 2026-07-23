@@ -2,16 +2,17 @@
 #define MyAppVersion "1.4.1"
 #define MyAppPublisher "mimaxon1"
 #define MyAppExeName "PC Remote.exe"
+#define FirewallRuleName "PC Remote LAN"
 
 [Setup]
 AppId={{B0D5BE86-E060-4F59-AE9C-78C0E67B4A9D}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\Programs\{#MyAppName}
+DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 OutputDir=..\dist\installer
 OutputBaseFilename=PC-Remote-Setup-x64
 Compression=lzma2
@@ -37,4 +38,9 @@ Name: "desktopicon"; Description: "Создать ярлык на рабочем
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue
 
 [Run]
+Filename: "{cmd}"; Parameters: "/C netsh advfirewall firewall delete rule name=\"{#FirewallRuleName}\" >NUL 2>&1"; Flags: runhidden waituntilterminated
+Filename: "{cmd}"; Parameters: "/C netsh advfirewall firewall add rule name=\"{#FirewallRuleName}\" dir=in action=allow program=\"{app}\{#MyAppExeName}\" enable=yes profile=private,domain"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{cmd}"; Parameters: "/C netsh advfirewall firewall delete rule name=\"{#FirewallRuleName}\""; Flags: runhidden waituntilterminated
