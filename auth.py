@@ -65,11 +65,7 @@ def _migrate_from_source(source: Path, target: Path) -> bool:
         logger.warning("Failed to resolve legacy settings path %s: %s", source, exc)
 
     if target.exists():
-        try:
-            source.unlink()
-        except Exception as exc:
-            logger.warning("Failed to remove legacy settings file %s: %s", source, exc)
-        return True
+        return False
 
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
