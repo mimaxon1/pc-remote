@@ -54,10 +54,6 @@ def _migrate_legacy_autostart() -> None:
     if not legacy.exists() or legacy == target:
         return
     if target.exists():
-        try:
-            legacy.unlink()
-        except Exception as exc:
-            logger.warning("Failed to remove legacy autostart file %s: %s", legacy, exc)
         return
 
     target.parent.mkdir(parents=True, exist_ok=True)
