@@ -1,6 +1,6 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
 Security fixes are provided on a best-effort basis for:
 
@@ -10,35 +10,25 @@ Security fixes are provided on a best-effort basis for:
 | Latest tagged release | Yes |
 | Older releases | No |
 
-## Reporting A Vulnerability
+## Reporting a vulnerability
 
-If you believe you found a security vulnerability in PC Remote, please do not
-open a public GitHub issue.
+Please do not publish vulnerability details in a regular GitHub issue.
 
-Use one of these private channels instead:
+Prefer GitHub Private Vulnerability Reporting for this repository. If private reporting is unavailable, open a minimal issue requesting a private contact channel without including exploit details, credentials, logs, or other sensitive information.
 
-- GitHub Private Vulnerability Reporting
-- Email: `vfrcbv857@gmail.com`
-
-Please include as much detail as you can:
+Useful information for a private report includes:
 
 - affected version, branch, or commit
 - environment details
 - steps to reproduce
-- expected behavior and actual behavior
+- expected and actual behavior
 - impact assessment, if known
-- logs, screenshots, or proof of concept if relevant
+- relevant logs or proof of concept
 
-## Response Timeline
+## Scope note
 
-I aim to acknowledge new security reports within 7 days.
+PC Remote is designed for trusted local-network use. The default transport is plain HTTP and the application should not be exposed directly to the public internet.
 
-After acknowledgment, I may ask follow-up questions, confirm severity, and
-coordinate a fix before public disclosure.
+## Disclosure
 
-## Disclosure Guidance
-
-- Please give me reasonable time to investigate and prepare a fix
-- Avoid publicly sharing exploit details before a fix is available
-- If the issue is not actually security-sensitive, it may be redirected to the
-  normal issue tracker
+Please allow reasonable time to investigate and prepare a fix before publishing exploit details.
