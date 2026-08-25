@@ -5,8 +5,7 @@
 <h1 align="center">PC Remote</h1>
 
 <p align="center">
-  Control a Windows PC from your phone over the local network with QR onboarding,
-  a tray companion app, and a lightweight web controller.
+  Control a Windows PC from a phone on the same local network.
 </p>
 
 <p align="center">
@@ -17,39 +16,66 @@
   <img src="https://img.shields.io/badge/python-3.13%2B-3776AB" alt="Python">
 </p>
 
-Current release target: `v1.4.1`
+PC Remote is a lightweight LAN-only remote controller for Windows. A tray application runs on the PC, while any phone with a browser can connect through the local web interface.
 
-## Overview
+Current release: `v1.4.1`
 
-PC Remote runs three pieces together:
+## Features
 
-- A FastAPI API on port `8000`
-- A static web controller on port `8080`
-- A Windows tray app for QR pairing, settings, and status
+- QR-based first-run pairing
+- PIN-backed login and short-lived session tokens
+- System volume, mute, media, and audio-output controls
+- Launch recent and pinned desktop applications
+- Open, minimize, and close application windows
+- Windows power actions
+- Russian and English web UI
+- Light and dark themes
+- Tray status, autostart, and single-instance handling
+- Portable Windows build with no Python required on the target PC
 
-The project is designed for local LAN use. It is not intended to be exposed
-directly to the public internet.
+## Architecture
 
-## Highlights
+```text
+Phone browser
+     |
+     | local Wi-Fi / LAN
+     v
+Static web controller :8080
+     |
+     v
+FastAPI control API :8000
+     |
+     +-- audio / media
+     +-- app and window control
+     +-- power actions
+     +-- authentication
+     |
+Windows tray companion
+```
 
-- QR-based first-run setup
-- Passwordless QR reconnect after pairing
-- 4-digit PIN login flow
-- Volume, mute, and media controls
-- Quick launch for recent and pinned desktop apps
-- Open, minimize, and close app windows from the controller
-- Light and dark theme toggle in the web UI
-- Russian and English UI language switch
-- Adaptive offline detection with retry backoff
-- Tray-based autostart and single-instance protection
+The project is deliberately local-first. It does not require a cloud service or external account.
 
-## Requirements
+## Security model
+
+PC Remote is designed for a trusted local network and should not be exposed directly to the public internet.
+
+- PINs are stored as salted PBKDF2-HMAC-SHA256 hashes
+- Session tokens are generated with Python's `secrets` module and kept in memory
+- CORS is restricted to local origins
+- Login attempts are rate-limited
+- Runtime settings are stored under `%APPDATA%\PC Remote` and are not part of the repository
+
+The default transport is HTTP because the application targets local LAN use. If you need remote access across untrusted networks, place it behind an authenticated VPN or another appropriately secured transport instead of forwarding ports directly.
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting.
+
+## Quick start
+
+Requirements:
 
 - Windows 10 or Windows 11
-- Python 3.13+ for source runs and builds
-- A phone and PC connected to the same local network
-
-## Quick Start
+- Python 3.13+
+- PC and phone connected to the same local network
 
 ```powershell
 py -3.13 -m venv .venv
@@ -58,10 +84,9 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-`tkinter` is not installed from pip here; it ships with the standard Windows
-Python distribution used by the tray GUI.
+The tray application will start the API and web controller. Pair the phone using the QR flow from the tray menu.
 
-## Build A Portable Bundle
+## Build a portable bundle
 
 ```powershell
 py -3.13 -m venv .venv
@@ -70,77 +95,48 @@ python -m pip install -r requirements.txt pyinstaller tzdata
 python build_release.py
 ```
 
-If you intentionally want a clean first-run package that forgets your local app
-state, use:
+Output:
+
+```text
+dist\PC Remote\PC Remote.exe
+```
+
+To intentionally create a clean first-run build without persisted local settings:
 
 ```powershell
 python build_release.py --reset-settings
 ```
 
-Output:
-
-- `dist\PC Remote\PC Remote.exe`
-
 ## Testing
-
-Run the full suite from the repository root:
 
 ```powershell
 .venv\Scripts\python.exe -m pytest
 ```
 
-Documentation for test layout, targeted runs, and troubleshooting lives in
-[docs/testing.md](docs/testing.md).
+The test suite covers authentication, startup behavior, API flows, Windows integration helpers, GUI safety, and application control. Tests also run in GitHub Actions.
 
-## Documentation
-
-- [Documentation hub](docs/README.md)
-- [Testing guide](docs/testing.md)
-- [Roadmap](docs/roadmap.md)
-- [Implementation notes](docs/implementation-notes.md)
-- [Changelog](CHANGELOG.md)
-- [Contributing](CONTRIBUTING.md)
-
-## Project Layout
+## Project layout
 
 ```text
 .
-|- main.py                  FastAPI entry point and startup flow
-|- auth.py                  PIN, QR pairing, and token management
-|- gui.py                   Tray UI and setup/status windows
-|- apps.py                  App discovery, quick launch, and window actions
-|- audio.py                 Windows audio device and volume helpers
-|- web/                     Static controller UI and icons
-|- tests/                   Automated test suite
-|- docs/                    Supporting documentation
-|- build_release.py         Portable Windows bundle helper
+|- main.py             FastAPI entry point and startup flow
+|- auth.py             PIN hashing, pairing, and session tokens
+|- gui.py              Tray UI and setup/status windows
+|- apps.py             Application discovery and launch helpers
+|- audio.py            Windows audio integration
+|- web/                Static phone controller
+|- tests/              Automated test suite
+|- docs/               Supporting documentation
+|- build_release.py    Portable Windows build helper
 ```
 
-## Configuration Notes
+## Documentation
 
-- Runtime settings live in `%APPDATA%\PC Remote\settings.json`
-- Logs are written to `%APPDATA%\PC Remote\pc-remote.log`
-- `/health` exposes a lightweight status endpoint for diagnostics
-- If QR links resolve to the wrong local address, set
-  `PC_REMOTE_PUBLIC_HOST=192.168.x.x` before launch
-- If the phone cannot connect, allow ports `8000` and `8080` in Windows Firewall
-
-## Troubleshooting
-
-- `ModuleNotFoundError: pystray`: install dependencies again and rebuild
-- `PermissionError` under `dist\PC Remote`: close the running app before rebuilding
-- Pairing opens an unreachable address: override the host with `PC_REMOTE_PUBLIC_HOST`
-- Release build should start from a clean state: build with `--reset-settings`
-  instead of deleting `%APPDATA%\PC Remote\settings.json` manually
-
-## Development Notes
-
-- Tests are expected to pass on Windows and currently run in GitHub Actions
-- Supporting docs live under `docs/` to keep the repository root clean
-- Temporary analysis files such as `tmp_*` are intentionally ignored and do not
-  ship with the public repository
+- [Testing guide](docs/testing.md)
+- [Roadmap](docs/roadmap.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
-This project is open source under the Apache License 2.0. See [LICENSE](LICENSE)
-and [NOTICE](NOTICE).
+Licensed under the Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
