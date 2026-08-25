@@ -22,7 +22,20 @@
 
 PC Remote is a lightweight LAN-only remote controller for Windows. A tray application runs on the PC, while any phone with a browser can connect through the local web interface.
 
+**A ready-to-run Windows build is available. Python is only required for development or building from source.**
+
 Current release: `v1.4.1`
+
+## Run the packaged app
+
+For normal use, no Python installation is required.
+
+1. Extract the packaged PC Remote release.
+2. Run `PC Remote.exe`.
+3. Open the QR pairing window from the tray icon.
+4. Scan the QR code with a phone connected to the same local network.
+
+The application starts the local API and web controller automatically.
 
 ## Features
 
@@ -73,9 +86,9 @@ The default transport is HTTP because the application targets local LAN use. If 
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-## Quick start
+## Run from source
 
-Requirements:
+This section is for development. Requirements:
 
 - Windows 10 or Windows 11
 - Python 3.13+
@@ -88,9 +101,7 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-The tray application will start the API and web controller. Pair the phone using the QR flow from the tray menu.
-
-## Build a portable bundle
+## Build from source
 
 ```powershell
 py -3.13 -m venv .venv
