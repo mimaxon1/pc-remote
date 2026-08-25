@@ -1,5 +1,7 @@
 # Changelog
 
+**English** · [Русский](CHANGELOG_RU.md)
+
 ## Unreleased
 
 - moved automated tests into the dedicated `tests/` directory
@@ -30,7 +32,7 @@
 - added adaptive offline retry/backoff polling in the web controller instead of fixed-interval retries during API outages
 - exposed the app version and offline retry settings through runtime config and `/health`
 - tightened local release hygiene by ignoring future `build*` and `dist*` artifact folders
-- refreshed project docs and roadmap to match the post-`v1.3.4` codebase
+- refreshed project docs to match the post-`v1.3.4` codebase
 
 ## v1.3.4
 
@@ -49,7 +51,7 @@
 
 - fixed packaged (`.exe`) API startup in windowed mode by disabling uvicorn console logging config
 - fixed packaged web server responses by suppressing `SimpleHTTPRequestHandler` stderr logging
-- moved `settings.json` to per-user app data (`%APPDATA%\\PC Remote\\settings.json`) to keep release folder clean
+- moved `settings.json` to per-user app data (`%APPDATA%\PC Remote\settings.json`) to keep release folder clean
 - added migration from legacy `settings.json` location near script/exe
 - updated network interfaces view in web UI to render one interface per line
 
