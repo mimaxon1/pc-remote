@@ -136,9 +136,8 @@ python build_release.py --reset-settings
 
 ## Документация
 
-- [Тестирование](docs/testing.md)
-- [Roadmap](docs/roadmap.md)
-- [История изменений](CHANGELOG.md)
+- [Тестирование](docs/testing_RU.md) · [English](docs/testing.md)
+- [История изменений](CHANGELOG_RU.md) · [English](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Лицензия
