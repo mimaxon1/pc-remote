@@ -136,9 +136,8 @@ The test suite covers authentication, startup behavior, API flows, Windows integ
 
 ## Documentation
 
-- [Testing guide](docs/testing.md)
-- [Roadmap](docs/roadmap.md)
-- [Changelog](CHANGELOG.md)
+- [Testing guide](docs/testing.md) · [Русский](docs/testing_RU.md)
+- [Changelog](CHANGELOG.md) · [Русский](CHANGELOG_RU.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License
