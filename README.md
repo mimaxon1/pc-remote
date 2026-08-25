@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <strong>English</strong> · <a href="README_RU.md">Русский</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/mimaxon1/pc-remote/actions/workflows/tests.yml">
     <img src="https://github.com/mimaxon1/pc-remote/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests">
   </a>
