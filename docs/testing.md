@@ -1,5 +1,7 @@
 # Testing Guide
 
+**English** · [Русский](testing_RU.md)
+
 ## Overview
 
 The automated test suite lives in the `tests/` directory and is configured
