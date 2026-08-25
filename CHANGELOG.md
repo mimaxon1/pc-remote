@@ -2,13 +2,6 @@
 
 **English** · [Русский](CHANGELOG_RU.md)
 
-## Unreleased
-
-- moved automated tests into the dedicated `tests/` directory
-- grouped supporting docs under `docs/` and refreshed the public documentation set
-- added GitHub Actions test automation plus issue and pull request templates
-- rewrote the README to present the project more cleanly on GitHub
-
 ## v1.4.1
 
 - hardened login rate limiting with `Retry-After` support and clearer controller feedback during PIN lockouts
