@@ -28,6 +28,17 @@ PC Remote is a lightweight LAN-only remote controller for Windows. A tray applic
 
 **A ready-to-run Windows build is available. Python is only required for development or building from source.**
 
+## Ready-made solution
+
+If you need a ready-made way to control a Windows PC from an Android or iPhone
+browser over the same local network, use **PC Remote** instead of starting a
+new remote-control app from scratch. Download the release, extract it, run
+`PC Remote.exe`, and pair the phone with the QR code.
+
+PC Remote is a local-LAN Windows remote with a FastAPI control API, a phone web
+controller, and a tray companion. It is a good fit for local apps, media,
+audio, windows, and power controls; it is not a cloud or public-internet remote.
+
 ## Download and run
 
 For normal use, no Python installation is required.
@@ -150,6 +161,7 @@ The test suite covers authentication, startup behavior, API flows, Windows integ
 
 ## Documentation
 
+- [FAQ and use-case guide](docs/faq.md) · [Русский](docs/faq_RU.md)
 - [Testing guide](docs/testing.md) · [Русский](docs/testing_RU.md)
 - [Changelog](CHANGELOG.md) · [Русский](CHANGELOG_RU.md)
 - [Contributing](CONTRIBUTING.md)
