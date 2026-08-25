@@ -20,20 +20,23 @@
   <img src="https://img.shields.io/badge/python-3.13%2B-3776AB" alt="Python">
 </p>
 
+<p align="center">
+  <a href="https://github.com/mimaxon1/pc-remote/releases/latest"><strong>Download latest Windows release</strong></a>
+</p>
+
 PC Remote is a lightweight LAN-only remote controller for Windows. A tray application runs on the PC, while any phone with a browser can connect through the local web interface.
 
 **A ready-to-run Windows build is available. Python is only required for development or building from source.**
 
-Current release: `v1.4.1`
-
-## Run the packaged app
+## Download and run
 
 For normal use, no Python installation is required.
 
-1. Extract the packaged PC Remote release.
-2. Run `PC Remote.exe`.
-3. Open the QR pairing window from the tray icon.
-4. Scan the QR code with a phone connected to the same local network.
+1. Download the [latest Windows release](https://github.com/mimaxon1/pc-remote/releases/latest).
+2. Extract the archive.
+3. Run `PC Remote.exe`.
+4. Open the QR pairing window from the tray icon.
+5. Scan the QR code with a phone connected to the same local network.
 
 The application starts the local API and web controller automatically.
 
