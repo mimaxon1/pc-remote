@@ -1,0 +1,70 @@
+name: Build Microsoft Store MSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      identity_name:
+        description: "Package/Identity Name copied exactly from Partner Center"
+        required: true
+      publisher:
+        description: "Publisher identity copied exactly from Partner Center (for example CN=...)"
+        required: true
+      publisher_display_name:
+        description: "Publisher display name copied exactly from Partner Center"
+        required: true
+      version:
+        description: "App version, for example 1.5.0"
+        required: true
+        default: "1.5.0"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build-msix:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller tzdata
+
+      - name: Run tests
+        run: python -m pytest
+
+      - name: Build portable application
+        run: python build_release.py --reset-settings
+
+      - name: Build unsigned Store MSIX
+        shell: pwsh
+        run: |
+          & .\packaging\microsoft-store\build_msix.ps1 `
+            -IdentityName '${{ inputs.identity_name }}' `
+            -Publisher '${{ inputs.publisher }}' `
+            -PublisherDisplayName '${{ inputs.publisher_display_name }}' `
+            -Version '${{ inputs.version }}'
+
+      - name: Upload Store package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pc-remote-store-msix-${{ inputs.version }}
+          path: release/store/*.msix
+          if-no-files-found: error
+
+      - name: Store submission reminder
+        shell: pwsh
+        run: |
+          Write-Host 'This artifact is intentionally unsigned.'
+          Write-Host 'For Microsoft Store MSIX submission, Partner Center re-signs the package after certification.'
+          Write-Host 'Run the Windows App Certification Kit before submitting the final package.'
