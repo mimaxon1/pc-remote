@@ -40,7 +40,7 @@ def test_distribution_renderer_generates_all_package_formats(tmp_path: Path) -> 
     }
 
     installer = (winget / "mimaxon1.PCRemote.installer.yaml").read_text(encoding="utf-8")
-    assert "ManifestVersion: 1.28.0" in installer
+    assert "ManifestVersion: 1.12.0" in installer
     assert "InstallerType: inno" in installer
     assert "Scope: user" in installer
     assert "DisplayName: PC Remote 1.5.0" in installer

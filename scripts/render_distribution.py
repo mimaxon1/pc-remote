@@ -19,7 +19,7 @@ REPO = "https://github.com/mimaxon1/pc-remote"
 PACKAGE_ID = "mimaxon1.PCRemote"
 CHOCO_ID = "pc-remote"
 PRODUCT_CODE = "{8A5675B9-1F20-4E2B-8BB4-D0C42973F9E4}_is1"
-WINGET_SCHEMA = "1.28.0"
+WINGET_SCHEMA = "1.12.0"
 
 
 def _hash(value: str, name: str) -> str:
