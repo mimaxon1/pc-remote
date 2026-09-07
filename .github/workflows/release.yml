@@ -88,9 +88,12 @@ jobs:
             throw 'Setup EXE was not produced.'
           }
 
-          & $setup.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Silent installer failed with exit code $LASTEXITCODE"
+          $install = Start-Process `
+            -FilePath $setup.FullName `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' `
+            -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            throw "Silent installer failed with exit code $($install.ExitCode)"
           }
 
           $installedExe = Join-Path $env:LOCALAPPDATA 'Programs\PC Remote\PC Remote.exe'
@@ -114,9 +117,12 @@ jobs:
           if (-not (Test-Path $uninstaller)) {
             throw "Uninstaller not found: $uninstaller"
           }
-          & $uninstaller /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-          if ($LASTEXITCODE -ne 0) {
-            throw "Silent uninstaller failed with exit code $LASTEXITCODE"
+          $uninstall = Start-Process `
+            -FilePath $uninstaller `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' `
+            -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            throw "Silent uninstaller failed with exit code $($uninstall.ExitCode)"
           }
 
       - name: Generate SHA-256 checksums
