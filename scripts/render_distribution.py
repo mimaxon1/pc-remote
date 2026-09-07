@@ -18,7 +18,7 @@ from xml.sax.saxutils import escape
 REPO = "https://github.com/mimaxon1/pc-remote"
 PACKAGE_ID = "mimaxon1.PCRemote"
 CHOCO_ID = "pc-remote"
-PRODUCT_CODE = "8A5675B9-1F20-4E2B-8BB4-D0C42973F9E4_is1"
+PRODUCT_CODE = "{8A5675B9-1F20-4E2B-8BB4-D0C42973F9E4}_is1"
 WINGET_SCHEMA = "1.28.0"
 
 
@@ -76,7 +76,7 @@ def render_winget(root: Path, version: str, setup_sha: str) -> None:
               - silent
               - silentWithProgress
             UpgradeBehavior: install
-            ProductCode: {PRODUCT_CODE}
+            ProductCode: '{PRODUCT_CODE}'
             Installers:
               - Architecture: x64
                 InstallerUrl: {setup_url}
@@ -85,7 +85,7 @@ def render_winget(root: Path, version: str, setup_sha: str) -> None:
                   - DisplayName: PC Remote
                     Publisher: mimaxon1
                     DisplayVersion: '{version}'
-                    ProductCode: {PRODUCT_CODE}
+                    ProductCode: '{PRODUCT_CODE}'
                 InstallationMetadata:
                   DefaultInstallLocation: '%LocalAppData%\\Programs\\PC Remote'
             ManifestType: installer
