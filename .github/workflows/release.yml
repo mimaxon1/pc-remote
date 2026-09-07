@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-release:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
       - name: Check out repository
@@ -80,6 +80,45 @@ jobs:
             exit $LASTEXITCODE
           }
 
+      - name: Verify unattended install and ARP metadata
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release -Filter '*-Setup.exe' | Select-Object -First 1
+          if (-not $setup) {
+            throw 'Setup EXE was not produced.'
+          }
+
+          & $setup.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
+          if ($LASTEXITCODE -ne 0) {
+            throw "Silent installer failed with exit code $LASTEXITCODE"
+          }
+
+          $installedExe = Join-Path $env:LOCALAPPDATA 'Programs\PC Remote\PC Remote.exe'
+          if (-not (Test-Path $installedExe)) {
+            throw "Installed executable not found: $installedExe"
+          }
+
+          $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8A5675B9-1F20-4E2B-8BB4-D0C42973F9E4}_is1'
+          $arp = Get-ItemProperty $uninstallKey -ErrorAction Stop
+          if ($arp.DisplayName -ne 'PC Remote') {
+            throw "Unexpected ARP DisplayName: $($arp.DisplayName)"
+          }
+          if ($arp.DisplayVersion -ne $env:APP_VERSION) {
+            throw "Unexpected ARP DisplayVersion: $($arp.DisplayVersion)"
+          }
+          if ($arp.Publisher -ne 'mimaxon1') {
+            throw "Unexpected ARP Publisher: $($arp.Publisher)"
+          }
+
+          $uninstaller = Join-Path $env:LOCALAPPDATA 'Programs\PC Remote\unins000.exe'
+          if (-not (Test-Path $uninstaller)) {
+            throw "Uninstaller not found: $uninstaller"
+          }
+          & $uninstaller /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          if ($LASTEXITCODE -ne 0) {
+            throw "Silent uninstaller failed with exit code $LASTEXITCODE"
+          }
+
       - name: Generate SHA-256 checksums
         shell: pwsh
         run: |
@@ -93,11 +132,46 @@ jobs:
           $lines | Set-Content -Path "release\SHA256SUMS.txt" -Encoding ascii
           Get-Content "release\SHA256SUMS.txt"
 
-      - name: Upload build artifact
+      - name: Generate WinGet, Chocolatey and Scoop metadata
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release -Filter '*-Setup.exe' | Select-Object -First 1
+          $portable = Get-ChildItem release -Filter '*-portable.zip' | Select-Object -First 1
+          if (-not $setup -or -not $portable) {
+            throw 'Release artifacts required for distribution metadata are missing.'
+          }
+
+          $setupSha = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash
+          $portableSha = (Get-FileHash $portable.FullName -Algorithm SHA256).Hash
+
+          python scripts/render_distribution.py `
+            --version $env:APP_VERSION `
+            --setup-sha256 $setupSha `
+            --portable-sha256 $portableSha `
+            --output release/distribution
+
+          $wingetDir = "release\distribution\winget\manifests\m\mimaxon1\PCRemote\$env:APP_VERSION"
+          if (-not (Test-Path $wingetDir)) {
+            throw 'WinGet manifest set was not generated.'
+          }
+
+          Get-Content "release\distribution\scoop\pc-remote.json" -Raw | ConvertFrom-Json | Out-Null
+
+          choco pack "release\distribution\chocolatey\pc-remote.nuspec" `
+            --outputdirectory "release\distribution\chocolatey"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Chocolatey package build failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Upload build and distribution artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pc-remote-${{ env.APP_VERSION }}
-          path: release/*
+          path: |
+            release/*.exe
+            release/*.zip
+            release/SHA256SUMS.txt
+            release/distribution/**
           if-no-files-found: error
 
       - name: Publish GitHub release
