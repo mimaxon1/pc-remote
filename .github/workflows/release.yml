@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version used in package filenames (for example 1.5.0-test)"
+        required: true
+        default: "dev"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -19,6 +25,20 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+
+      - name: Resolve package version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}".TrimStart('v')
+          }
+          else {
+            $version = "${{ github.ref_name }}".TrimStart('v')
+          }
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Package version is empty"
+          }
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -43,12 +63,11 @@ jobs:
       - name: Build installer and portable archive
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
           New-Item -ItemType Directory -Force -Path release | Out-Null
 
           Compress-Archive `
-            -Path "dist\PC Remote\*" `
-            -DestinationPath "release\PC-Remote-$version-windows-x64-portable.zip" `
+            -Path "dist\PC Remote" `
+            -DestinationPath "release\PC-Remote-$env:APP_VERSION-windows-x64-portable.zip" `
             -Force
 
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
@@ -56,7 +75,7 @@ jobs:
             throw "Inno Setup compiler not found at $iscc"
           }
 
-          & $iscc "/DAppVersion=$version" "installer\PC-Remote.iss"
+          & $iscc "/DAppVersion=$env:APP_VERSION" "installer\PC-Remote.iss"
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
@@ -77,11 +96,12 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pc-remote-${{ github.ref_name }}
+          name: pc-remote-${{ env.APP_VERSION }}
           path: release/*
           if-no-files-found: error
 
       - name: Publish GitHub release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: PC Remote ${{ github.ref_name }}
