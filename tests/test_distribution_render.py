@@ -43,6 +43,7 @@ def test_distribution_renderer_generates_all_package_formats(tmp_path: Path) -> 
     assert "ManifestVersion: 1.28.0" in installer
     assert "InstallerType: inno" in installer
     assert "Scope: user" in installer
+    assert "DisplayName: PC Remote 1.5.0" in installer
     assert setup_sha.upper() in installer
     assert "PC-Remote-1.5.0-windows-x64-Setup.exe" in installer
     assert "'{8A5675B9-1F20-4E2B-8BB4-D0C42973F9E4}_is1'" in installer

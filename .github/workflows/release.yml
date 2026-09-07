@@ -103,7 +103,7 @@ jobs:
 
           $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8A5675B9-1F20-4E2B-8BB4-D0C42973F9E4}_is1'
           $arp = Get-ItemProperty $uninstallKey -ErrorAction Stop
-          if ($arp.DisplayName -ne 'PC Remote') {
+          if ($arp.DisplayName -ne "PC Remote $env:APP_VERSION") {
             throw "Unexpected ARP DisplayName: $($arp.DisplayName)"
           }
           if ($arp.DisplayVersion -ne $env:APP_VERSION) {

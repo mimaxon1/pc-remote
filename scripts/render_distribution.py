@@ -82,7 +82,7 @@ def render_winget(root: Path, version: str, setup_sha: str) -> None:
                 InstallerUrl: {setup_url}
                 InstallerSha256: {setup_sha}
                 AppsAndFeaturesEntries:
-                  - DisplayName: PC Remote
+                  - DisplayName: PC Remote {version}
                     Publisher: mimaxon1
                     DisplayVersion: '{version}'
                     ProductCode: '{PRODUCT_CODE}'
