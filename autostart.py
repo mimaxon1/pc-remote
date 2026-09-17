@@ -47,6 +47,16 @@ def _legacy_autostart_file() -> Path:
     return _startup_dir() / LEGACY_AUTOSTART_FILENAME
 
 
+def _startup_cmd_content() -> str:
+    return "@echo off\r\nstart \"\" /b " + _command_line() + "\r\n"
+
+
+def _write_cmd_file(target: Path) -> None:
+    # Newline="" preserves the exact CRLF bytes we write.
+    with open(target, "w", encoding="utf-8", newline="") as handle:
+        handle.write(_startup_cmd_content())
+
+
 def _migrate_legacy_autostart() -> None:
     legacy = _legacy_autostart_file()
     target = _startup_dir() / AUTOSTART_FILENAME
@@ -54,16 +64,11 @@ def _migrate_legacy_autostart() -> None:
     if not legacy.exists() or legacy == target:
         return
     if target.exists():
-        try:
-            legacy.unlink()
-        except Exception as exc:
-            logger.warning("Failed to remove legacy autostart file %s: %s", legacy, exc)
+        # Keep the legacy file as a user-visible fallback; never delete data.
         return
-
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
-        content = f'@echo off\r\nstart "" /b {_command_line()}\r\n'
-        target.write_text(content, encoding="utf-8")
+        _write_cmd_file(target)
         legacy.unlink()
     except Exception as exc:
         logger.exception("Failed to migrate autostart file %s -> %s: %s", legacy, target, exc)
@@ -76,9 +81,7 @@ def is_enabled() -> bool:
 def install() -> Path:
     target = autostart_file()
     target.parent.mkdir(parents=True, exist_ok=True)
-    cmd = _command_line()
-    content = f'@echo off\r\nstart "" /b {cmd}\r\n'
-    target.write_text(content, encoding="utf-8")
+    _write_cmd_file(target)
     return target
 
 

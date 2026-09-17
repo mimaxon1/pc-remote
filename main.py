@@ -1,4 +1,11 @@
 """PC controller (FastAPI + web UI + tray GUI)."""
+# Diagnostics must run before imports that initialize GUI, logging or settings.
+if __name__ == "__main__":
+    import sys as _cli_sys
+    if "--diagnostics" in _cli_sys.argv[1:]:
+        from diagnostics import main as _diagnostics_main
+        raise SystemExit(_diagnostics_main())
+
 import argparse
 import ctypes
 import functools
@@ -190,6 +197,19 @@ def _build_allowed_origins() -> list[str]:
 
 
 allowed_origins = _build_allowed_origins()
+
+
+def _browser_origin_allowed(origin: str | None) -> bool:
+    return origin is None or origin in allowed_origins
+
+
+@app.middleware("http")
+async def enforce_browser_origin(request: Request, call_next):
+    # CORS controls response visibility, not whether a request executes.
+    if not _browser_origin_allowed(request.headers.get("origin")):
+        return JSONResponse(status_code=403, content={"detail": "Origin not allowed"})
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -647,6 +667,26 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
+_LEGACY_PIN_LOCK = threading.Lock()
+
+
+def _verify_legacy_pin(manager: auth.AuthManager, password: str) -> bool:
+    # Admission, verification and failure accounting are serialized so
+    # concurrent requests cannot verify past the shared budget. Token
+    # authorization does not use this path.
+    key = "legacy-pin-actions"
+    with _LEGACY_PIN_LOCK:
+        blocked_until = LOGIN_RATE_LIMITER.blocked_until(key)
+        if blocked_until:
+            raise HTTPException(status_code=429, detail="PIN attempts temporarily blocked")
+        if manager.verify_password(password):
+            LOGIN_RATE_LIMITER.reset(key)
+            return True
+        if LOGIN_RATE_LIMITER.record_failure(key):
+            raise HTTPException(status_code=429, detail="PIN attempts temporarily blocked")
+        return False
+
+
 def check(token: Optional[str], password: Optional[str]) -> None:
     """Authorize a request using either a session token or a PIN."""
     manager = _auth_manager()
@@ -654,7 +694,7 @@ def check(token: Optional[str], password: Optional[str]) -> None:
         raise HTTPException(status_code=409, detail="PIN setup required")
     if token and manager.verify_token(token):
         return
-    if password and manager.verify_password(password):
+    if password and _verify_legacy_pin(manager, password):
         return
     raise HTTPException(status_code=403, detail="Invalid PIN or expired session")
 # -----------------------------
@@ -757,7 +797,7 @@ def change_password(request: Request, data: ChangePasswordModel):
     manager = _auth_manager()
     if manager.requires_password_setup():
         raise HTTPException(status_code=409, detail="Complete first-run setup via QR first")
-    if not manager.verify_password(data.current_password):
+    if not _verify_legacy_pin(manager, data.current_password):
         raise HTTPException(status_code=403, detail="Invalid current PIN")
     if data.token:
         if not manager.verify_token(data.token):
@@ -1185,6 +1225,7 @@ def run_api():
             ws="none",
             log_config=None,
             access_log=False,
+            proxy_headers=False,
             use_colors=False,
             log_level="info",
         )
