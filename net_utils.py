@@ -88,34 +88,9 @@ def _legacy_appdata_settings_paths() -> list[Path]:
 
 
 def _migrate_from_source(source: Path, target: Path) -> bool:
-    if not source.exists():
-        return False
-    try:
-        if source.resolve() == target.resolve():
-            return False
-    except Exception as exc:
-        logger.warning("Failed to resolve legacy network settings path %s: %s", source, exc)
-
-    if target.exists():
-        try:
-            source.unlink()
-        except Exception as exc:
-            logger.warning("Failed to remove legacy network settings file %s: %s", source, exc)
-        return True
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        shutil.move(str(source), str(target))
-        return True
-    except Exception as exc:
-        logger.warning("Failed to move legacy network settings %s -> %s: %s", source, target, exc)
-        try:
-            shutil.copy2(source, target)
-            source.unlink(missing_ok=True)
-            return True
-        except Exception as copy_exc:
-            logger.exception("Failed to migrate network settings %s -> %s: %s", source, target, copy_exc)
-            return False
+    """Unified safe migration (see migration.safe_migrate)."""
+    import migration
+    return migration.safe_migrate(source, target)
 
 
 def _migrate_legacy_settings(target: Path) -> None:
@@ -123,7 +98,14 @@ def _migrate_legacy_settings(target: Path) -> None:
     candidates.append(_legacy_runtime_settings_path())
     for source in candidates:
         if _migrate_from_source(source, target):
-            break
+            return
+    if target.exists() or not any(source.exists() for source in candidates):
+        return
+    logger.warning(
+        "Legacy network settings exist but could not be migrated to %s; "
+        "leaving them in place and ignoring them this run",
+        target,
+    )
 
 
 def _settings_path() -> Path:

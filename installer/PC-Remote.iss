@@ -41,3 +41,47 @@ Name: "{autodesktop}\PC Remote"; Filename: "{app}\{#MyAppExeName}"; Tasks: deskt
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch PC Remote"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// The application owns opt-in autostart. Do not enable it during installation.
+// On uninstall, remove only entries targeting this installation, never another
+// portable/source installation or a customized startup command.
+procedure RemoveOwnedStartupFile(const Name: String);
+var
+  Filename, Expected: String;
+  Content: AnsiString;
+  Owned: Boolean;
+begin
+  Filename := ExpandConstant('{userstartup}\') + Name;
+  Expected := '@echo off' + #13#10 + 'start "" /b "' +
+    ExpandConstant('{app}\{#MyAppExeName}') + '"' + #13#10;
+  if LoadStringFromFile(Filename, Content) then
+  begin
+    Owned := Content = UTF8Encode(Expected);
+    // Python's Windows text writer historically doubled the carriage return.
+    StringChangeEx(Expected, #13#10, #13#13#10, True);
+    Owned := Owned or (Content = UTF8Encode(Expected));
+    if Owned then
+      if not DeleteFile(Filename) then
+        Log('Could not remove owned startup file: ' + Filename);
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Command, Expected: String;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    RemoveOwnedStartupFile('PC Remote.cmd');
+    RemoveOwnedStartupFile('PC-Android.cmd');
+    // Compatibility with the unmerged Run-key installer experiment.
+    Expected := '"' + ExpandConstant('{app}\{#MyAppExeName}') + '"';
+    if RegQueryStringValue(HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Run', 'PC Remote', Command) then
+      if Command = Expected then
+        if not RegDeleteValue(HKCU,
+          'Software\Microsoft\Windows\CurrentVersion\Run', 'PC Remote') then
+          Log('Could not remove owned PC Remote Run value');
+  end;
+end;

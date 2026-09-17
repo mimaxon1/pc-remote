@@ -56,34 +56,9 @@ def _legacy_appdata_settings_paths() -> list[Path]:
 
 
 def _migrate_from_source(source: Path, target: Path) -> bool:
-    if not source.exists():
-        return False
-    try:
-        if source.resolve() == target.resolve():
-            return False
-    except Exception as exc:
-        logger.warning("Failed to resolve legacy settings path %s: %s", source, exc)
-
-    if target.exists():
-        try:
-            source.unlink()
-        except Exception as exc:
-            logger.warning("Failed to remove legacy settings file %s: %s", source, exc)
-        return True
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        shutil.move(str(source), str(target))
-        return True
-    except Exception as exc:
-        logger.warning("Failed to move legacy settings %s -> %s: %s", source, target, exc)
-        try:
-            shutil.copy2(source, target)
-            source.unlink(missing_ok=True)
-            return True
-        except Exception as copy_exc:
-            logger.exception("Failed to migrate legacy settings %s -> %s: %s", source, target, copy_exc)
-            return False
+    """Unified safe migration (see migration.safe_migrate)."""
+    import migration
+    return migration.safe_migrate(source, target)
 
 
 def _migrate_legacy_settings(target: Path) -> None:
@@ -91,7 +66,16 @@ def _migrate_legacy_settings(target: Path) -> None:
     candidates.append(_legacy_runtime_settings_path())
     for source in candidates:
         if _migrate_from_source(source, target):
-            break
+            return
+    # Destination already authoritative: leave any legacy copy alone.
+    if target.exists():
+        return
+    leftover = [source for source in candidates if source.exists()]
+    if leftover:
+        raise SettingsError(
+            "Legacy settings exist but could not be migrated to "
+            f"{target}. The legacy files were not deleted."
+        )
 
 
 def settings_path() -> Path:
