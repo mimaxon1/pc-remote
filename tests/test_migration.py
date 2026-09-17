@@ -49,7 +49,7 @@ def test_settings_migrate_move_legacy_when_no_current(tmp_path, monkeypatch):
     assert _read(current) == payload
 
 
-def test_settings_failed_migration_never_deletes_source(tmp_path, monkeypatch):
+def test_settings_failed_migration_raises_and_never_deletes_source(tmp_path, monkeypatch):
     set_appdata_env(monkeypatch, tmp_path)
     import auth
     legacy = tmp_path / 'PC-Android' / 'settings.json'
@@ -61,12 +61,50 @@ def test_settings_failed_migration_never_deletes_source(tmp_path, monkeypatch):
         raise OSError('disk on fire')
     monkeypatch.setattr('migration.shutil.move', broken_move)
 
-    result = auth.settings_path()
+    with pytest.raises(auth.SettingsError, match='could not be migrated'):
+        auth.settings_path()
 
-    assert result == current
     assert not current.exists()
     assert legacy.exists()
     assert _read(legacy) == payload
+
+
+def test_settings_failed_migration_keeps_existing_current_without_error(tmp_path, monkeypatch):
+    set_appdata_env(monkeypatch, tmp_path)
+    import auth
+    legacy = tmp_path / 'PC-Android' / 'settings.json'
+    current = tmp_path / 'PC Remote' / 'settings.json'
+    _write(legacy, {'version': 2, 'password': {'is_set': False}})
+    _write(current, {'version': auth.SETTINGS_VERSION, 'password': {'is_set': True}})
+
+    def broken_move(*args, **kwargs):
+        raise OSError('disk on fire')
+    monkeypatch.setattr('migration.shutil.move', broken_move)
+
+    result = auth.settings_path()
+
+    assert result == current
+    assert legacy.exists()
+    assert _read(current)['password'] == {'is_set': True}
+
+
+def test_network_failed_migration_keeps_source_and_ignores_it(tmp_path, monkeypatch):
+    set_appdata_env(monkeypatch, tmp_path)
+    import net_utils
+    legacy = tmp_path / 'PC-Android' / 'settings.json'
+    current = tmp_path / 'PC Remote' / 'settings.json'
+    _write(legacy, {'network': {'preferred_ip': '192.168.1.20'}})
+
+    def broken_move(*args, **kwargs):
+        raise OSError('disk on fire')
+    monkeypatch.setattr('migration.shutil.move', broken_move)
+
+    iface, ip = net_utils._load_network_settings()
+
+    assert (iface, ip) == (None, None)
+    assert not current.exists()
+    assert legacy.exists()
+    assert _read(legacy)['network']['preferred_ip'] == '192.168.1.20'
 
 
 def test_network_settings_preserve_legacy_file_when_current_exists(tmp_path, monkeypatch):

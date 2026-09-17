@@ -7,10 +7,10 @@ Original checkout `pc-with-android` has uncommitted work and corrupt refs; untou
 
 | Task | State | Evidence / next action |
 |---|---|---|
-| 1 Security | PARTIAL | SECURITY.md exists; trusted-LAN HTTP is intentional. Review authentication/command/install boundaries; remediate only confirmed defects. |
-| 2 Migration | PARTIAL | auth.py and autostart.py contain separate legacy migration, swallowed errors and source deletion; network fix branch needs comparison. |
-| 3 Branch report | TODO | 11 legacy installer/autostart/firewall/settings branches available; compare against current main, no bulk merges. |
-| 4 Diagnostics | TODO | Only autostart-status CLI exists; add read-only JSON command with no secret values. |
-| 5 Installation matrix | PARTIAL | Current release CI covers installation metadata; installer has no uninstall autostart cleanup. Add safe contracts and disposable-Windows smoke harness. |
+| 1 Security | DONE | Confirmed defects fixed: legacy PIN attempt budget (serialized), explicit browser Origin rejection, `proxy_headers=False`. `SECURITY.md` + `docs/SECURITY_REVIEW.md` + `tests/test_security_contract.py`. |
+| 2 Migration | DONE | Unified `migration.safe_migrate`; auth raises `SettingsError` when a legacy file remains and the destination is missing (no silent reset). Network leftover is preserved and ignored with a warning. Autostart never deletes a colliding legacy CMD. Tests: `tests/test_migration.py`. |
+| 3 Branch report | DONE | `BRANCH_MIGRATION_REPORT.md` over 12 topic refs vs `d728079`. No bulk merges. Installer keeps main AppId/user-scope. |
+| 4 Diagnostics | DONE | `python main.py --diagnostics` / `diagnostics.py`; no secrets. Tests: `tests/test_diagnostics.py`. |
+| 5 Installation matrix | PARTIAL / BLOCKED (VM) | Static Inno contracts + opt-in disposable-VM harness (`scripts/installer_smoke.ps1`, `docs/installer-smoke.md`). Real Inno compile + lifecycle not run here (no ISCC, no `dist/PC Remote/PC Remote.exe`, no disposable VM). |
 
 Real install/uninstall validation requires a disposable Windows user/VM: do not modify this workstation's actual autostart, firewall, services or user configuration. Mock/static tests are not OS lifecycle proof.

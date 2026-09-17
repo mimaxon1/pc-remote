@@ -66,7 +66,16 @@ def _migrate_legacy_settings(target: Path) -> None:
     candidates.append(_legacy_runtime_settings_path())
     for source in candidates:
         if _migrate_from_source(source, target):
-            break
+            return
+    # Destination already authoritative: leave any legacy copy alone.
+    if target.exists():
+        return
+    leftover = [source for source in candidates if source.exists()]
+    if leftover:
+        raise SettingsError(
+            "Legacy settings exist but could not be migrated to "
+            f"{target}. The legacy files were not deleted."
+        )
 
 
 def settings_path() -> Path:

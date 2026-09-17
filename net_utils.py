@@ -98,7 +98,14 @@ def _migrate_legacy_settings(target: Path) -> None:
     candidates.append(_legacy_runtime_settings_path())
     for source in candidates:
         if _migrate_from_source(source, target):
-            break
+            return
+    if target.exists() or not any(source.exists() for source in candidates):
+        return
+    logger.warning(
+        "Legacy network settings exist but could not be migrated to %s; "
+        "leaving them in place and ignoring them this run",
+        target,
+    )
 
 
 def _settings_path() -> Path:
