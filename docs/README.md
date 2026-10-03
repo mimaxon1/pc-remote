@@ -11,3 +11,6 @@ Supporting documentation for PC Remote.
 - [Changelog](../CHANGELOG.md) · [Русский](../CHANGELOG_RU.md)
 - [Contributing guide](../CONTRIBUTING.md)
 - [Security policy](../SECURITY.md)
+
+
+- [PERFORMANCE_OPTIMIZATION_PROPOSAL.md](docs/PERFORMANCE_OPTIMIZATION_PROPOSAL.md) — performance plan with unchanged behavior.
