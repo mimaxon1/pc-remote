@@ -13,4 +13,4 @@ Supporting documentation for PC Remote.
 - [Security policy](../SECURITY.md)
 
 
-- [PERFORMANCE_OPTIMIZATION_PROPOSAL.md](docs/PERFORMANCE_OPTIMIZATION_PROPOSAL.md) — performance plan with unchanged behavior.
+- [PERFORMANCE_OPTIMIZATION_PROPOSAL.md](PERFORMANCE_OPTIMIZATION_PROPOSAL.md) — performance plan with unchanged behavior.
