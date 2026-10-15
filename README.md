@@ -41,6 +41,8 @@ Use it from the couch, beside a TV, during a presentation, or anywhere else on t
 
 If you are looking for an open-source, browser-based Windows or Mac remote, PC Remote is built for that use case.
 
+On macOS, media controls target the Music app. Power and window actions use macOS Automation; window actions may also require PC Remote to be enabled under **System Settings → Privacy & Security → Accessibility**. On macOS 13 and later, if start-at-login registration needs approval, PC Remote opens **System Settings → General → Login Items**.
+
 ## Quick start
 
 1. Open the [latest release](https://github.com/mimaxon1/pc-remote/releases/latest).

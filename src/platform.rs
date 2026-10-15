@@ -8,6 +8,8 @@ use std::{
 };
 
 use serde_json::{Value, json};
+#[cfg(target_os = "macos")]
+use smappservice_rs::{AppService, ServiceManagementError, ServiceStatus, ServiceType};
 use sysinfo::System;
 
 use crate::state::{AppItem, AppState};
@@ -32,7 +34,27 @@ pub fn default_output_device() -> Value {
     json!({ "id": "default", "name": name })
 }
 
-pub fn volume(state: &AppState) -> f32 {
+#[cfg(target_os = "macos")]
+fn parse_macos_audio_settings(raw: &str) -> Option<(f32, bool)> {
+    let mut volume = None;
+    let mut muted = None;
+    for field in raw
+        .trim()
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .split(',')
+    {
+        let (key, value) = field.trim().split_once(':')?;
+        match key.trim() {
+            "output volume" => volume = value.trim().parse::<f32>().ok(),
+            "output muted" => muted = value.trim().parse::<bool>().ok(),
+            _ => {}
+        }
+    }
+    Some((volume?.clamp(0.0, 100.0) / 100.0, muted?))
+}
+
+pub fn audio_state(state: &AppState) -> (f32, bool) {
     #[cfg(target_os = "windows")]
     unsafe {
         let mut levels = 0u32;
@@ -48,24 +70,33 @@ pub fn volume(state: &AppState) -> f32 {
     }
     #[cfg(target_os = "macos")]
     if let Ok(output) = Command::new("osascript")
-        .args(["-e", "output volume of (get volume settings)"])
+        .args(["-e", "get volume settings"])
         .output()
     {
         if output.status.success() {
             if let Ok(raw) = String::from_utf8(output.stdout) {
-                if let Ok(value) = raw.trim().parse::<f32>() {
+                if let Some((volume, muted)) = parse_macos_audio_settings(&raw) {
                     if let Ok(mut current) = state.current_volume.lock() {
-                        *current = value.clamp(0.0, 100.0) / 100.0;
+                        *current = volume;
                     }
+                    state
+                        .muted
+                        .store(muted, std::sync::atomic::Ordering::Relaxed);
                 }
             }
         }
     }
-    state
+    let volume = state
         .current_volume
         .lock()
         .map(|volume| *volume)
-        .unwrap_or(0.5)
+        .unwrap_or(0.5);
+    let muted = state.muted.load(std::sync::atomic::Ordering::Relaxed);
+    (volume, muted)
+}
+
+pub fn volume(state: &AppState) -> f32 {
+    audio_state(state).0
 }
 
 pub fn set_volume(state: &AppState, value: f32) -> Result<f32, String> {
@@ -89,7 +120,7 @@ pub fn set_volume(state: &AppState, value: f32) -> Result<f32, String> {
             .output()
             .map_err(|error| error.to_string())?;
         if !output.status.success() {
-            return Err("macOS could not change the output volume".into());
+            return Err("macOS could not change output volume".into());
         }
     }
     if let Ok(mut current) = state.current_volume.lock() {
@@ -130,7 +161,7 @@ pub fn set_mute(state: &AppState, muted: bool) -> Result<bool, String> {
 }
 
 pub fn toggle_mute(state: &AppState) -> Result<bool, String> {
-    let next = !state.muted.load(std::sync::atomic::Ordering::Relaxed);
+    let next = !audio_state(state).1;
     set_mute(state, next)
 }
 
@@ -154,6 +185,7 @@ pub fn send_media(action: &str) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
+        // Music is the supported macOS media target; keep this explicit in the UI.
         let script = match action {
             "play_pause" => "tell application \"Music\" to playpause",
             "next" => "tell application \"Music\" to next track",
@@ -166,7 +198,9 @@ pub fn send_media(action: &str) -> Result<(), String> {
             .output()
             .map_err(|error| error.to_string())?;
         if !result.status.success() {
-            return Err("macOS media control was denied or unavailable".into());
+            return Err(
+                "macOS could not control Music; allow PC Remote under System Settings > Privacy & Security > Automation".into(),
+            );
         }
     }
     Ok(())
@@ -395,9 +429,7 @@ pub fn window_action(item: &AppItem, action: &str) -> Result<(), String> {
             .output()
             .map_err(|error| error.to_string())?;
         if !result.status.success() {
-            return Err(
-                "Application window not found or Accessibility access is unavailable".into(),
-            );
+            return Err("Could not control the window. Allow PC Remote under System Settings > Privacy & Security > Automation and Accessibility".into());
         }
         return Ok(());
     }
@@ -483,6 +515,7 @@ pub fn system_info(state: &AppState) -> Value {
     let uptime = System::uptime();
     let network = json!({"hostname": System::host_name().unwrap_or_else(|| "PC Remote".into()), "current_ip":ip.to_string(), "primary_interface":interfaces.first(), "interfaces":interfaces});
     let audio = json!({ "active_output_device": default_output_device() });
+    let (volume, muted) = audio_state(state);
     let battery = battery_info();
     json!({
         "cpu_percent": system.global_cpu_usage(),
@@ -493,8 +526,8 @@ pub fn system_info(state: &AppState) -> Value {
         "battery": battery,
         "network": network,
         "audio": audio,
-        "volume": volume(state),
-        "muted": state.muted.load(std::sync::atomic::Ordering::Relaxed),
+        "volume": volume,
+        "muted": muted,
     })
 }
 
@@ -538,16 +571,29 @@ pub fn power_action(reboot: bool) -> Result<(), String> {
         Command::new("shutdown").args(["/s", "/t", "0"]).spawn()
     };
     #[cfg(target_os = "macos")]
-    let result = Command::new("osascript")
-        .args([
-            "-e",
-            if reboot {
-                "tell application \"System Events\" to restart"
+    {
+        let output = Command::new("osascript")
+            .args([
+                "-e",
+                if reboot {
+                    "tell application \"System Events\" to restart"
+                } else {
+                    "tell application \"System Events\" to shut down"
+                },
+            ])
+            .output()
+            .map_err(|error| error.to_string())?;
+        if !output.status.success() {
+            let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            return Err(if detail.is_empty() {
+                "macOS did not accept the power command. Allow PC Remote under System Settings > Privacy & Security > Automation".into()
             } else {
-                "tell application \"System Events\" to shut down"
-            },
-        ])
-        .spawn();
+                format!("macOS did not accept the power command: {detail}")
+            });
+        }
+        Ok(())
+    }
+    #[cfg(target_os = "windows")]
     result.map(|_| ()).map_err(|error| error.to_string())
 }
 
@@ -565,12 +611,82 @@ pub fn autostart_path() -> Option<PathBuf> {
         .map(|path| path.join("Library/LaunchAgents/com.mimaxon1.PCRemote.plist"))
 }
 
+#[cfg(target_os = "macos")]
+fn supports_smappservice() -> bool {
+    Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .and_then(|version| version.split('.').next()?.parse::<u32>().ok())
+        .is_some_and(|major| major >= 13)
+}
+
+#[cfg(target_os = "macos")]
+fn remove_legacy_autostart() -> Result<(), String> {
+    if let Some(path) = autostart_path() {
+        if path.exists() {
+            fs::remove_file(path).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 pub fn autostart_enabled() -> bool {
+    #[cfg(target_os = "macos")]
+    if supports_smappservice() {
+        let status = AppService::new(ServiceType::MainApp).status();
+        if status != ServiceStatus::NotRegistered && status != ServiceStatus::NotFound {
+            return true;
+        }
+    }
     autostart_path().is_some_and(|path| path.exists())
 }
 
 pub fn set_autostart(enabled: bool) -> Result<(), String> {
     let path = autostart_path().ok_or("Could not locate the current user's startup folder")?;
+    #[cfg(target_os = "macos")]
+    if supports_smappservice() {
+        let service = AppService::new(ServiceType::MainApp);
+        let status = service.status();
+        if enabled {
+            match service.register() {
+                Ok(()) | Err(ServiceManagementError::AlreadyRegistered) => {
+                    remove_legacy_autostart()?;
+                    if service.status() == ServiceStatus::RequiresApproval {
+                        AppService::open_system_settings_login_items();
+                        return Err(
+                            "Approve PC Remote under System Settings > General > Login Items"
+                                .into(),
+                        );
+                    }
+                    return Ok(());
+                }
+                Err(ServiceManagementError::InvalidSignature) => {
+                    // Ad-hoc signed builds may not satisfy ServiceManagement's signature policy.
+                    // Keep the legacy per-user LaunchAgent as a functional fallback.
+                }
+                Err(ServiceManagementError::LaunchDeniedByUser) => {
+                    AppService::open_system_settings_login_items();
+                    return Err(
+                        "Enable PC Remote under System Settings > General > Login Items".into(),
+                    );
+                }
+                Err(error) => {
+                    return Err(format!("Could not register the macOS login item: {error}"));
+                }
+            }
+        } else {
+            if status != ServiceStatus::NotRegistered && status != ServiceStatus::NotFound {
+                service.unregister().map_err(|error| {
+                    format!("Could not unregister the macOS login item: {error}")
+                })?;
+            }
+            remove_legacy_autostart()?;
+            return Ok(());
+        }
+    }
     if enabled {
         let executable = std::env::current_exe().map_err(|error| error.to_string())?;
         let content = if cfg!(target_os = "windows") {
@@ -600,4 +716,25 @@ pub fn set_autostart(enabled: bool) -> Result<(), String> {
 
 pub fn scan_shortcuts() -> Vec<AppItem> {
     recent_apps()
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::parse_macos_audio_settings;
+
+    #[test]
+    fn parses_macos_output_volume_and_mute_state_together() {
+        assert_eq!(
+            parse_macos_audio_settings(
+                "output volume:50, input volume:100, alert volume:50, output muted:true"
+            ),
+            Some((0.5, true))
+        );
+        assert_eq!(
+            parse_macos_audio_settings(
+                "output volume:125, input volume:100, alert volume:50, output muted:false"
+            ),
+            Some((1.0, false))
+        );
+    }
 }

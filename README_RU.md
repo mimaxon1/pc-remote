@@ -41,6 +41,8 @@ PC Remote 2.0 — лёгкий open-source пульт для Windows и macOS, �
 
 Если вы ищете open-source пульт для Windows или Mac с управлением из браузера, PC Remote сделан именно для этого сценария.
 
+В macOS медиакнопки управляют приложением Music. Для команд питания и окон macOS может запросить разрешение Automation; для окон может потребоваться включить PC Remote в **System Settings → Privacy & Security → Accessibility**. Если автозапуск в macOS 13 и новее требует подтверждения, приложение откроет **System Settings → General → Login Items**.
+
 ## Быстрый старт
 
 1. Откройте [последний релиз](https://github.com/mimaxon1/pc-remote/releases/latest).

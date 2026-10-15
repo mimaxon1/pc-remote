@@ -774,6 +774,7 @@
       const port = Number(runtimeConfig.apiPort || 8000);
       const webPort = Number(runtimeConfig.webPort || window.location.port || 8080);
       const pinLength = Number(runtimeConfig.pinLength || 4);
+      const platform = String(runtimeConfig.platform || "windows");
       const statusPollMs = Number(runtimeConfig.pollIntervalMs || 4000);
       const appVersion = String(runtimeConfig.appVersion || "dev");
       const offlineRetryMinMs = Math.max(
@@ -847,6 +848,7 @@
           muteOn: "Включить звук",
           muteOff: "Выключить звук",
           mediaTitle: "Медиа",
+          mediaTitleMac: "Медиа · Музыка",
           mediaPrev: "Пред.",
           mediaPause: "Пауза",
           mediaNext: "След.",
@@ -870,6 +872,8 @@
           powerTitle: "Питание",
           reboot: "Перезагрузить ПК",
           shutdown: "Выключить ПК",
+          rebootMac: "Перезагрузить Mac",
+          shutdownMac: "Выключить Mac",
           systemTitle: "Система",
           networkTitle: "Сеть",
           audioTitle: "Вывод звука",
@@ -917,10 +921,15 @@
           appRestartFailed: "Не удалось перезапустить приложение",
           commandSent: "Команда отправлена",
           shutdownConfirm: "Точно выключить ПК?",
+          shutdownConfirmMac: "Точно выключить Mac?",
           shutdownError: "Ошибка выключения",
+          shutdownErrorMac: "Не удалось выключить Mac. Разреши PC Remote в System Settings → Privacy & Security → Automation.",
           rebootConfirm: "Точно перезагрузить ПК?",
+          rebootConfirmMac: "Точно перезагрузить Mac?",
           rebootError: "Ошибка перезагрузки",
+          rebootErrorMac: "Не удалось перезагрузить Mac. Разреши PC Remote в System Settings → Privacy & Security → Automation.",
           mediaError: "Ошибка медиа",
+          mediaErrorMac: "Не удалось управлять Music. Разреши PC Remote в System Settings → Privacy & Security → Automation.",
           volumeChangeFailed: "Не удалось изменить громкость",
           muteToggleFailed: "Не удалось переключить звук",
           appsLoadFailed: "Не удалось загрузить список приложений",
@@ -988,6 +997,7 @@
           muteOn: "Unmute",
           muteOff: "Mute",
           mediaTitle: "Media",
+          mediaTitleMac: "Media · Music",
           mediaPrev: "Prev",
           mediaPause: "Pause",
           mediaNext: "Next",
@@ -1011,6 +1021,8 @@
           powerTitle: "Power",
           reboot: "Restart PC",
           shutdown: "Shut Down PC",
+          rebootMac: "Restart Mac",
+          shutdownMac: "Shut Down Mac",
           systemTitle: "System",
           networkTitle: "Network",
           audioTitle: "Audio Output",
@@ -1058,10 +1070,15 @@
           appRestartFailed: "Failed to restart the app",
           commandSent: "Command sent",
           shutdownConfirm: "Shut down the PC?",
+          shutdownConfirmMac: "Shut down this Mac?",
           shutdownError: "Shutdown error",
+          shutdownErrorMac: "Could not shut down the Mac. Allow PC Remote under System Settings → Privacy & Security → Automation.",
           rebootConfirm: "Restart the PC?",
+          rebootConfirmMac: "Restart this Mac?",
           rebootError: "Restart error",
+          rebootErrorMac: "Could not restart the Mac. Allow PC Remote under System Settings → Privacy & Security → Automation.",
           mediaError: "Media error",
+          mediaErrorMac: "Could not control Music. Allow PC Remote under System Settings → Privacy & Security → Automation.",
           volumeChangeFailed: "Failed to change volume",
           muteToggleFailed: "Failed to toggle mute",
           appsLoadFailed: "Failed to load app list",
@@ -1332,7 +1349,7 @@
 
         const mainTitles = queryAll("#tabMain .section-title");
         setText(mainTitles[0], t("volumeTitle"));
-        setText(mainTitles[1], t("mediaTitle"));
+        setText(mainTitles[1], t(platform === "macos" ? "mediaTitleMac" : "mediaTitle"));
         setText(mainTitles[2], t("appsTitle"));
         setText(mainTitles[3], t("powerTitle"));
 
@@ -1347,8 +1364,8 @@
         setText($("recentAppsList").previousElementSibling, t("recentTitle"));
 
         const powerButtons = queryAll("#tabMain .power-controls button");
-        setText(powerButtons[0], t("reboot"));
-        setText(powerButtons[1], t("shutdown"));
+        setText(powerButtons[0], t(platform === "macos" ? "rebootMac" : "reboot"));
+        setText(powerButtons[1], t(platform === "macos" ? "shutdownMac" : "shutdown"));
 
         const infoTitles = queryAll("#tabInfo .section-title");
         setText(infoTitles[0], t("systemTitle"));
@@ -2503,15 +2520,18 @@
             await disconnect(true);
             return;
           }
-          if (!res.ok) throw new Error();
+          if (!res.ok) {
+            toast(t(platform === "macos" ? "mediaErrorMac" : "mediaError"));
+            return;
+          }
         } catch {
           await markApiUnavailable();
-          toast(t("mediaError"));
+          toast(t(platform === "macos" ? "mediaErrorMac" : "mediaError"));
         }
       }
 
       async function shutdownPc() {
-        if (!confirm(t("shutdownConfirm"))) return;
+        if (!confirm(t(platform === "macos" ? "shutdownConfirmMac" : "shutdownConfirm"))) return;
         try {
           const res = await apiPost("/shutdown", {});
           if (res.status === 403 || res.status === 409) {
@@ -2519,19 +2539,22 @@
             await disconnect(true);
             return;
           }
-          if (!res.ok) throw new Error();
+          if (!res.ok) {
+            toast(t(platform === "macos" ? "shutdownErrorMac" : "shutdownError"));
+            return;
+          }
           clearSessionToken();
           stopPolling();
           resetUi();
           toast(t("commandSent"));
         } catch {
           await markApiUnavailable();
-          toast(t("shutdownError"));
+          toast(t(platform === "macos" ? "shutdownErrorMac" : "shutdownError"));
         }
       }
 
       async function rebootPc() {
-        if (!confirm(t("rebootConfirm"))) return;
+        if (!confirm(t(platform === "macos" ? "rebootConfirmMac" : "rebootConfirm"))) return;
         try {
           const res = await apiPost("/reboot", {});
           if (res.status === 403 || res.status === 409) {
@@ -2539,14 +2562,17 @@
             await disconnect(true);
             return;
           }
-          if (!res.ok) throw new Error();
+          if (!res.ok) {
+            toast(t(platform === "macos" ? "rebootErrorMac" : "rebootError"));
+            return;
+          }
           clearSessionToken();
           stopPolling();
           resetUi();
           toast(t("commandSent"));
         } catch {
           await markApiUnavailable();
-          toast(t("rebootError"));
+          toast(t(platform === "macos" ? "rebootErrorMac" : "rebootError"));
         }
       }
 
