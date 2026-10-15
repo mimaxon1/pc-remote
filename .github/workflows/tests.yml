@@ -2,35 +2,40 @@ name: Tests
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+permissions:
+  contents: read
 
 jobs:
-  pytest:
-    runs-on: windows-latest
-    timeout-minutes: 15
-
+  rust:
+    name: Rust tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-15
+          - os: macos-15-intel
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.13"
-          cache: pip
+          components: rustfmt, clippy
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
-      - name: Run test suite
-        run: python -m pytest
+      - name: Run Rust tests
+        run: cargo test --locked
+
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings

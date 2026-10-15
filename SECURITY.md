@@ -39,17 +39,19 @@ PC Remote is designed for trusted local-network use. The default transport is pl
   system. Executable extension checks and `shell=False` are not an allowlist.
   Do not run PC Remote elevated; do not give untrusted people the PIN/QR token.
 - PIN hashes are salted PBKDF2; tokens are random, short-lived and memory-only.
-  A four-digit PIN still has low entropy. `/login` has a per-peer attempt budget;
-  legacy action PINs and PIN changes share a separate global attempt budget.
-  A malicious peer can temporarily exhaust that legacy budget; valid session
-  tokens are not blocked by it. This is not a distributed-attack defence.
+  A four-digit PIN still has low entropy. All PIN checks, including `/login`,
+  protected actions and PIN changes, share a per-peer attempt limit and a
+  process-wide failure budget. Checks are serialized so concurrent requests
+  cannot pass a limit that has already been reached. A malicious peer can
+  temporarily exhaust the shared budget; valid session tokens are not blocked
+  by PIN limits. This is not a distributed-attack defence.
 - API requests carrying a browser Origin must match the explicit local-origin
   list. CORS alone is not authorization. Requests without Origin remain supported
   for the local tray/native clients and must satisfy endpoint authorization.
   Pairing-token issuance is loopback-only; an unauthenticated restart is accepted
   only from loopback, while an authenticated remote restart remains supported.
-  Local malware is outside this trust boundary. Uvicorn forwarded-client headers
-  are disabled deliberately.
+  Peer limits use the socket's remote address. Local malware is outside this
+  trust boundary.
 - Settings and logs are in user-writable AppData. They are not protected from
   another process running as the same Windows user. Diagnostics emits categories,
   never settings contents or raw log/error messages.
@@ -63,10 +65,11 @@ The current distribution has no guaranteed Authenticode signing trust chain.
 Installer user scope is intentional: no service or elevated firewall provisioning
 is required. Do not import old elevated installer branches wholesale.
 
-`build_release.py` preserves settings by default. `--reset-settings` and clean
-restart explicitly delete settings; they are not upgrade/migration mechanisms.
-Keep backups before intentional resets. An actual clean-install/upgrade/uninstall
-claim requires the disposable-Windows smoke matrix, not just Python tests.
+The Rust 2.0 build stores settings in the current user's application-data folder
+and keeps legacy settings in place during migration. Its explicit clean-start
+action clears the saved PIN; it is not an upgrade or migration mechanism. Keep
+backups before intentional resets. Installer upgrade and uninstall behavior
+should be verified on disposable Windows before making release claims.
 
 ## Review evidence
 

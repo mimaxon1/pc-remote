@@ -5,7 +5,7 @@
 <h1 align="center">PC Remote</h1>
 
 <p align="center">
-  <strong>Control your Windows PC from any phone browser.</strong><br>
+  <strong>Control a Windows PC or Mac from any phone browser.</strong><br>
   No mobile app. No account. No cloud. Run it, scan a QR code, and control the PC over your local network.
 </p>
 
@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mimaxon1/pc-remote/releases/latest"><strong>Download for Windows</strong></a>
+  <a href="https://github.com/mimaxon1/pc-remote/releases/latest"><strong>Download for Windows or macOS</strong></a>
   ·
   <a href="docs/faq.md">FAQ</a>
 </p>
@@ -26,7 +26,7 @@
   <img src="https://img.shields.io/github/v/release/mimaxon1/pc-remote" alt="Latest release">
 </p>
 
-PC Remote is a lightweight, open-source Windows remote that turns any Android or iPhone browser into a local control panel for your PC. It is designed for people who want a simple local-first alternative to cloud-connected remote-control apps.
+PC Remote 2.0 is a lightweight, open-source Windows and macOS remote that turns any Android or iPhone browser into a local control panel for your computer. Its Rust desktop app rests in the system tray or macOS menu bar, without background polling while idle.
 
 Use it from the couch, beside a TV, during a presentation, or anywhere else on the same Wi-Fi/LAN.
 
@@ -35,32 +35,32 @@ Use it from the couch, beside a TV, during a presentation, or anywhere else on t
 - **No phone app required** — open the controller in any modern browser.
 - **No account or cloud service** — traffic stays on your local network.
 - **Fast pairing** — run PC Remote and scan the QR code.
-- **Ready-made Windows build** — Python is not required for normal use.
-- **Useful everyday controls** — apps, windows, volume, media, audio output, and power actions.
+- **Ready-made desktop builds** — no Python or mobile app is required for normal use.
+- **Useful everyday controls** — apps, windows, volume, media, and available power actions.
 - **Open source** — inspect it, modify it, or self-host it on your own PC.
 
-If you are looking for an open-source, browser-based Windows remote or a lightweight local alternative to tools such as Unified Remote, PC Remote is built for that use case.
+If you are looking for an open-source, browser-based Windows or Mac remote, PC Remote is built for that use case.
 
 ## Quick start
 
 1. Open the [latest release](https://github.com/mimaxon1/pc-remote/releases/latest).
-2. Download the Windows build.
-3. Run `PC Remote.exe`.
-4. Open the QR pairing window from the tray icon.
+2. Download the installer or portable build for Windows, or the universal macOS app.
+3. Run `PC Remote`.
+4. Open **Show phone pairing QR code** from the system tray or menu bar.
 5. Scan the QR code using a phone connected to the same local network.
 6. Start controlling the PC from the browser.
 
-Older releases may provide a portable ZIP only. New tagged releases are configured to publish both a Windows installer and a portable ZIP automatically.
+Each 2.0 tagged release publishes a Windows installer, Windows portable ZIP, universal macOS app in a DMG and ZIP, and SHA-256 checksums.
 
 ## What you can control
 
 - System volume and mute
 - Media playback controls
-- Audio-output device selection
+- Current audio-output status
 - Recent and pinned applications
 - Launching desktop applications
 - Opening, minimizing, and closing application windows
-- Windows power actions
+- Windows shutdown/restart and macOS power actions
 - Autostart and tray behavior
 - Light and dark themes
 - Russian and English web UI
@@ -72,7 +72,7 @@ Older releases may provide a portable ZIP only. New tagged releases are configur
 - Presentation and demo PCs
 - Local gaming or streaming setups
 - A second-screen control panel
-- Home-lab and self-hosted Windows setups
+- Home-lab and self-hosted setups
 
 ## Local-first by design
 
@@ -81,17 +81,16 @@ Phone browser
      |
      | local Wi-Fi / LAN
      v
-Web controller :8080
-     |
-     v
-FastAPI control API :8000
+Single Rust application
+     +-- web controller :8080
+     +-- control API :8000
      |
      +-- audio / media
      +-- app and window control
      +-- power actions
      +-- authentication
      |
-Windows tray companion
+Windows tray or macOS menu-bar icon
 ```
 
 PC Remote does not require an external account or cloud backend.
@@ -101,66 +100,56 @@ PC Remote does not require an external account or cloud backend.
 PC Remote is intended for a trusted local network. Do **not** expose its ports directly to the public internet.
 
 - PINs are stored as salted PBKDF2-HMAC-SHA256 hashes
-- Session tokens are generated with Python's `secrets` module and kept in memory
+- Session tokens come from the operating system's secure random source and stay in memory
 - CORS is restricted to local origins
 - Login attempts are rate-limited
-- Runtime settings are stored under `%APPDATA%\PC Remote`
+- Runtime settings are stored under `%APPDATA%\PC Remote` on Windows or `~/Library/Application Support/PC Remote` on macOS
 
 The default transport is HTTP because the application targets local LAN use. For access from outside your home network, use an authenticated VPN or another appropriately secured transport instead of direct port forwarding.
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-## Windows packaging
+## Downloads and release builds
 
-The project supports two release formats:
+Windows releases:
 
-- **Installer** — normal per-user Windows installation with Start Menu shortcut and optional desktop shortcut.
+- **Installer** — per-user Windows installation with a Start Menu shortcut.
 - **Portable ZIP** — extract and run without installation.
 
-Tagged releases (`v*`) are built automatically by GitHub Actions. The release workflow runs tests, builds the PyInstaller bundle, creates the Inno Setup installer, creates the portable ZIP, and publishes SHA-256 checksums.
+macOS releases are universal apps for Apple Silicon and Intel, in DMG and ZIP formats. The app is ad-hoc signed but is not notarized yet, so macOS may require an explicit first-open approval.
+
+Tagged releases (`v*`) build both platforms in GitHub Actions, run the Rust test suite, create the installers and archives, and publish SHA-256 checksums.
 
 ## Run from source
 
 Requirements:
 
-- Windows 10 or Windows 11
-- Python 3.13+
+- Windows 10/11 or macOS 12+
+- Rust stable
 - PC and phone connected to the same local network
 
-```powershell
-py -3.13 -m venv .venv
-& .venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python main.py
+```sh
+cargo run
 ```
 
 ## Build from source
 
-```powershell
-py -3.13 -m venv .venv
-& .venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt pyinstaller tzdata
-python build_release.py
+```sh
+cargo build --release
 ```
 
 Portable output:
 
 ```text
-dist\PC Remote\PC Remote.exe
+target\release\pc-remote.exe
 ```
 
-To intentionally create a clean first-run build without persisted local settings:
-
-```powershell
-python build_release.py --reset-settings
-```
-
-To create the installer after the portable build, compile [`installer/PC-Remote.iss`](installer/PC-Remote.iss) with Inno Setup 6.
+The Windows installer is built from [`installer/PC-Remote.iss`](installer/PC-Remote.iss) with Inno Setup 6.
 
 ## Testing
 
 ```powershell
-.venv\Scripts\python.exe -m pytest
+cargo test --locked
 ```
 
 Tests also run in GitHub Actions.
@@ -169,16 +158,12 @@ Tests also run in GitHub Actions.
 
 ```text
 .
-|- main.py                 FastAPI entry point and startup flow
-|- auth.py                 PIN hashing, pairing, and session tokens
-|- gui.py                  Tray UI and setup/status windows
-|- apps.py                 Application discovery and launch helpers
-|- audio.py                Windows audio integration
+|- src/                    Rust API, tray, authentication, and system controls
 |- web/                    Phone web controller
-|- tests/                  Automated test suite
+|- Cargo.toml              Rust dependencies and build profile
+|- Cargo.lock              Locked release dependencies
 |- installer/              Windows installer definition
 |- docs/                   Documentation and launch material
-|- build_release.py        Portable Windows build helper
 ```
 
 ## Documentation

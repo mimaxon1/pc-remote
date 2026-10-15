@@ -2,26 +2,24 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version used in package filenames (for example 1.5.0-test)"
+        description: "Version used in release asset names"
         required: true
-        default: "0.0.0-test"
+        default: "2.0.0-test"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-release:
+  build-windows:
     runs-on: windows-latest
     timeout-minutes: 35
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -32,161 +30,241 @@ jobs:
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $version = "${{ inputs.version }}".TrimStart('v')
           }
-          else {
-            $version = "${{ github.ref_name }}".TrimStart('v')
-          }
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            throw "Package version is empty"
-          }
+          else { $version = "${{ github.ref_name }}".TrimStart('v') }
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "Package version is empty" }
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PC_REMOTE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Set up Python
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Set up Python for Windows package metadata
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          cache: pip
 
-      - name: Install Python dependencies
+      - name: Run Rust tests and checks
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pyinstaller tzdata
+          cargo fmt --all -- --check
+          cargo test --locked
+          cargo clippy --locked --all-targets -- -D warnings
 
-      - name: Run tests
-        run: python -m pytest
+      - name: Build Windows app
+        run: cargo build --locked --release
 
-      - name: Build portable application
-        run: python build_release.py --reset-settings
-
-      - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
-
-      - name: Build installer and portable archive
+      - name: Stage portable app and create release archives
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path release | Out-Null
+          New-Item -ItemType Directory -Force -Path "dist\PC Remote", "release" | Out-Null
+          Copy-Item "target\release\pc-remote.exe" "dist\PC Remote\PC Remote.exe"
+          Copy-Item "web\favicon.ico" "dist\PC Remote\favicon.ico"
+          Compress-Archive -Path "dist\PC Remote" -DestinationPath "release\PC-Remote-$env:APP_VERSION-windows-x64-portable.zip" -Force
 
-          Compress-Archive `
-            -Path "dist\PC Remote" `
-            -DestinationPath "release\PC-Remote-$env:APP_VERSION-windows-x64-portable.zip" `
-            -Force
-
+          choco install innosetup --no-progress -y
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) {
-            throw "Inno Setup compiler not found at $iscc"
-          }
-
+          if (-not (Test-Path $iscc)) { throw "Inno Setup compiler not found" }
           & $iscc "/DAppVersion=$env:APP_VERSION" "installer\PC-Remote.iss"
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
 
-      - name: Verify unattended install and ARP metadata
+      - name: Verify unattended Windows install and uninstall
         shell: pwsh
         run: |
           $setup = Get-ChildItem release -Filter '*-Setup.exe' | Select-Object -First 1
-          if (-not $setup) {
-            throw 'Setup EXE was not produced.'
-          }
-
-          $install = Start-Process `
-            -FilePath $setup.FullName `
-            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' `
-            -Wait -PassThru
-          if ($install.ExitCode -ne 0) {
-            throw "Silent installer failed with exit code $($install.ExitCode)"
-          }
-
+          if (-not $setup) { throw 'Setup EXE was not produced.' }
+          $install = Start-Process -FilePath $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
           $installedExe = Join-Path $env:LOCALAPPDATA 'Programs\PC Remote\PC Remote.exe'
-          if (-not (Test-Path $installedExe)) {
-            throw "Installed executable not found: $installedExe"
-          }
-
-          $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8A5675B9-1F20-4E2B-8BB4-D0C42973F9E4}_is1'
-          $arp = Get-ItemProperty $uninstallKey -ErrorAction Stop
-          if ($arp.DisplayName -ne "PC Remote $env:APP_VERSION") {
-            throw "Unexpected ARP DisplayName: $($arp.DisplayName)"
-          }
-          if ($arp.DisplayVersion -ne $env:APP_VERSION) {
-            throw "Unexpected ARP DisplayVersion: $($arp.DisplayVersion)"
-          }
-          if ($arp.Publisher -ne 'mimaxon1') {
-            throw "Unexpected ARP Publisher: $($arp.Publisher)"
-          }
-
+          if (-not (Test-Path $installedExe)) { throw "Installed executable not found: $installedExe" }
+          $launched = Start-Process -FilePath $installedExe -ArgumentList '--autostart-status' -Wait -PassThru
+          if ($launched.ExitCode -ne 0) { throw 'Installed application CLI smoke failed.' }
           $uninstaller = Join-Path $env:LOCALAPPDATA 'Programs\PC Remote\unins000.exe'
-          if (-not (Test-Path $uninstaller)) {
-            throw "Uninstaller not found: $uninstaller"
-          }
-          $uninstall = Start-Process `
-            -FilePath $uninstaller `
-            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' `
-            -Wait -PassThru
-          if ($uninstall.ExitCode -ne 0) {
-            throw "Silent uninstaller failed with exit code $($uninstall.ExitCode)"
-          }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstaller failed: $($uninstall.ExitCode)" }
 
-      - name: Generate SHA-256 checksums
-        shell: pwsh
-        run: |
-          $lines = Get-ChildItem release -File |
-            Where-Object { $_.Name -ne "SHA256SUMS.txt" } |
-            Sort-Object Name |
-            ForEach-Object {
-              $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-              "$hash  $($_.Name)"
-            }
-          $lines | Set-Content -Path "release\SHA256SUMS.txt" -Encoding ascii
-          Get-Content "release\SHA256SUMS.txt"
-
-      - name: Generate WinGet, Chocolatey and Scoop metadata
+      - name: Generate Windows distribution metadata
         shell: pwsh
         run: |
           $setup = Get-ChildItem release -Filter '*-Setup.exe' | Select-Object -First 1
           $portable = Get-ChildItem release -Filter '*-portable.zip' | Select-Object -First 1
-          if (-not $setup -or -not $portable) {
-            throw 'Release artifacts required for distribution metadata are missing.'
-          }
-
+          if (-not $setup -or -not $portable) { throw 'Release assets are missing.' }
           $setupSha = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash
           $portableSha = (Get-FileHash $portable.FullName -Algorithm SHA256).Hash
-
-          python scripts/render_distribution.py `
-            --version $env:APP_VERSION `
-            --setup-sha256 $setupSha `
-            --portable-sha256 $portableSha `
-            --output release/distribution
-
-          $wingetDir = "release\distribution\winget\manifests\m\mimaxon1\PCRemote\$env:APP_VERSION"
-          if (-not (Test-Path $wingetDir)) {
-            throw 'WinGet manifest set was not generated.'
-          }
-
+          python scripts/render_distribution.py --version $env:APP_VERSION --setup-sha256 $setupSha --portable-sha256 $portableSha --output release/distribution
           Get-Content "release\distribution\scoop\pc-remote.json" -Raw | ConvertFrom-Json | Out-Null
+          choco pack "release\distribution\chocolatey\pc-remote.nuspec" --outputdirectory "release\distribution\chocolatey"
+          if ($LASTEXITCODE -ne 0) { throw "Chocolatey package build failed: $LASTEXITCODE" }
 
-          choco pack "release\distribution\chocolatey\pc-remote.nuspec" `
-            --outputdirectory "release\distribution\chocolatey"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Chocolatey package build failed with exit code $LASTEXITCODE"
-          }
-
-      - name: Upload build and distribution artifacts
+      - name: Upload Windows release files
         uses: actions/upload-artifact@v4
         with:
-          name: pc-remote-${{ env.APP_VERSION }}
+          name: pc-remote-windows-release
           path: |
             release/*.exe
             release/*.zip
-            release/SHA256SUMS.txt
             release/distribution/**
           if-no-files-found: error
 
+  build-macos:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            architecture: arm64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            architecture: x86_64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Resolve package version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+            version="${version#v}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+          echo "PC_REMOTE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+
+      - name: Run Rust tests and checks
+        run: |
+          cargo fmt --all -- --check
+          cargo test --locked --target ${{ matrix.target }}
+          cargo clippy --locked --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: Build macOS binary
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Upload macOS architecture binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: pc-remote-macos-${{ matrix.architecture }}
+          path: target/${{ matrix.target }}/release/pc-remote
+          if-no-files-found: error
+
+  package-macos:
+    needs: [build-macos]
+    runs-on: macos-15
+    steps:
+      - name: Resolve package version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+            version="${version#v}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Download macOS binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pc-remote-macos-*
+          path: release/mac-builds
+          merge-multiple: false
+
+      - name: Package and verify universal macOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${APP_VERSION}"
+          mkdir -p "release/macos/PC Remote.app/Contents/MacOS"
+          lipo -create \
+            "release/mac-builds/pc-remote-macos-arm64/pc-remote" \
+            "release/mac-builds/pc-remote-macos-x86_64/pc-remote" \
+            -output "release/macos/PC Remote.app/Contents/MacOS/PC Remote"
+          chmod 755 "release/macos/PC Remote.app/Contents/MacOS/PC Remote"
+          cat > "release/macos/PC Remote.app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>PC Remote</string>
+            <key>CFBundleDisplayName</key><string>PC Remote</string>
+            <key>CFBundleIdentifier</key><string>com.mimaxon1.PCRemote</string>
+            <key>CFBundleExecutable</key><string>PC Remote</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${version%%-*}</string>
+            <key>CFBundleVersion</key><string>${version%%-*}</string>
+            <key>LSUIElement</key><true/>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+          </dict></plist>
+          PLIST
+          codesign --force --deep --sign - "release/macos/PC Remote.app"
+          codesign --verify --deep --strict "release/macos/PC Remote.app"
+          plutil -lint "release/macos/PC Remote.app/Contents/Info.plist"
+          lipo -info "release/macos/PC Remote.app/Contents/MacOS/PC Remote"
+          "release/macos/PC Remote.app/Contents/MacOS/PC Remote" --autostart-status
+          ditto -c -k --sequesterRsrc --keepParent \
+            "release/macos/PC Remote.app" \
+            "release/macos/PC-Remote-${version}-macos-universal.zip"
+          hdiutil create -volname "PC Remote ${version}" \
+            -srcfolder "release/macos/PC Remote.app" \
+            -ov -format UDZO "release/macos/PC-Remote-${version}-macos-universal.dmg"
+          hdiutil verify "release/macos/PC-Remote-${version}-macos-universal.dmg"
+
+      - name: Upload universal macOS release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: pc-remote-macos-universal
+          path: |
+            release/macos/*.dmg
+            release/macos/*.zip
+          if-no-files-found: error
+
+  publish-release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, package-macos]
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows release files
+        uses: actions/download-artifact@v4
+        with:
+          name: pc-remote-windows-release
+          path: release/windows
+
+      - name: Download universal macOS release files
+        uses: actions/download-artifact@v4
+        with:
+          name: pc-remote-macos-universal
+          path: release/macos
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          : > SHA256SUMS.txt
+          for asset in windows/*.exe windows/*.zip macos/*.dmg macos/*.zip; do
+            (cd "$(dirname "$asset")" && shasum -a 256 "$(basename "$asset")") >> SHA256SUMS.txt
+          done
+          cat SHA256SUMS.txt
+
       - name: Publish GitHub release
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: PC Remote ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            release/*.exe
-            release/*.zip
+            release/windows/*.exe
+            release/windows/*.zip
+            release/macos/*.dmg
+            release/macos/*.zip
             release/SHA256SUMS.txt

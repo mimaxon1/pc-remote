@@ -2,6 +2,14 @@
 
 **English** · [Русский](CHANGELOG_RU.md)
 
+## v2.0.0
+
+- replaced the desktop Python runtime with a lightweight Rust tray and macOS menu-bar application
+- added universal macOS releases for Apple Silicon and Intel, distributed as DMG and ZIP
+- kept the phone web controller and legacy settings/PIN migration compatible with existing installations
+- applied one serialized per-peer and process-wide PIN attempt limit across login and protected actions
+- added Windows and both macOS architectures to Rust CI and tagged release builds
+
 ## v1.4.1
 
 - hardened login rate limiting with `Retry-After` support and clearer controller feedback during PIN lockouts
