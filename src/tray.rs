@@ -37,7 +37,7 @@ fn open_controller() {
     ));
 }
 
-fn menu() -> Result<Menu, Box<dyn std::error::Error>> {
+fn menu() -> Result<(Menu, MenuItem), Box<dyn std::error::Error>> {
     let menu = Menu::new();
     let pair = MenuItem::with_id("show-pairing-qr", "Show phone pairing QR code", true, None);
     let open = MenuItem::with_id("open-controller", "Open PC Remote", true, None);
@@ -58,7 +58,7 @@ fn menu() -> Result<Menu, Box<dyn std::error::Error>> {
     menu.append(&startup)?;
     menu.append(&PredefinedMenuItem::separator())?;
     menu.append(&quit)?;
-    Ok(menu)
+    Ok((menu, startup))
 }
 
 fn icon() -> Result<Icon, String> {
@@ -71,7 +71,7 @@ fn icon() -> Result<Icon, String> {
 
 pub fn run(state: Arc<AppState>) -> Result<(), String> {
     let event_loop = EventLoopBuilder::<UiAction>::with_user_event().build();
-    let tray_menu = menu().map_err(|error| error.to_string())?;
+    let (tray_menu, startup_item) = menu().map_err(|error| error.to_string())?;
     let _icon = TrayIconBuilder::new()
         .with_tooltip(if state.auth_ready() {
             "PC Remote 2.0"
@@ -114,6 +114,11 @@ pub fn run(state: Arc<AppState>) -> Result<(), String> {
                         }),
                         Err(error) => restart.log(&format!("Autostart update failed: {error}")),
                     }
+                    startup_item.set_text(if platform::autostart_enabled() {
+                        "Disable start at login"
+                    } else {
+                        "Start at login"
+                    });
                 }
                 UiAction::Quit => *control_flow = ControlFlow::Exit,
             }

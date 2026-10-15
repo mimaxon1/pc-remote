@@ -4,6 +4,8 @@
 
 The Rust test suite runs on Windows, Apple Silicon macOS, and Intel macOS in GitHub Actions. It uses temporary directories for settings tests and does not require a live audio device or a real phone.
 
+macOS CI also builds the arm64 and x86_64 binaries and verifies the universal app bundle and DMG. CI cannot grant macOS Automation or Accessibility permissions, so the Apple Events, window-control, and Login Item flows still need a real-Mac acceptance check.
+
 ## Run locally
 
 Install stable Rust, then run these commands from the repository root:

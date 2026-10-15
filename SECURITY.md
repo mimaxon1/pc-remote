@@ -52,6 +52,9 @@ PC Remote is designed for trusted local-network use. The default transport is pl
   only from loopback, while an authenticated remote restart remains supported.
   Peer limits use the socket's remote address. Local malware is outside this
   trust boundary.
+- On macOS, power and Music controls send Apple Events. Review the Automation
+  prompt before allowing them. Window minimize/close also requires PC Remote to
+  be enabled under System Settings > Privacy & Security > Accessibility.
 - Settings and logs are in user-writable AppData. They are not protected from
   another process running as the same Windows user. Diagnostics emits categories,
   never settings contents or raw log/error messages.

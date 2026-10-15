@@ -268,9 +268,8 @@ fn route_api(
         }
         (Method::Post, "/status") => {
             authenticate(state, body, peer)?;
-            Ok(
-                json!({"volume":platform::volume(state),"muted":state.muted.load(Ordering::Relaxed)}),
-            )
+            let (volume, muted) = platform::audio_state(state);
+            Ok(json!({"volume":volume,"muted":muted}))
         }
         (Method::Post, "/stats" | "/info") => {
             authenticate(state, body, peer)?;
@@ -316,7 +315,7 @@ fn route_api(
                 if error == "Unknown action" {
                     bad(error)
                 } else {
-                    ApiError::new(500, "Media operation failed")
+                    ApiError::new(500, error)
                 }
             })?;
             Ok(json!({"status":"ok"}))
@@ -414,8 +413,7 @@ fn route_api(
         }
         (Method::Post, "/shutdown" | "/reboot") => {
             authenticate(state, body, peer)?;
-            platform::power_action(path == "/reboot")
-                .map_err(|_| ApiError::new(500, "Power operation failed"))?;
+            platform::power_action(path == "/reboot").map_err(|error| ApiError::new(500, error))?;
             state.phone_connected.store(false, Ordering::Relaxed);
             Ok(json!({"status":if path == "/reboot" {"rebooting"} else {"bye"}}))
         }
@@ -508,7 +506,24 @@ fn allowed_origin(origin: Option<&str>) -> bool {
 }
 
 fn runtime_config() -> Value {
-    json!({"appVersion":env!("CARGO_PKG_VERSION"),"apiPort":config::port("PC_REMOTE_API_PORT",config::API_PORT_DEFAULT),"webPort":config::port("PC_REMOTE_WEB_PORT",config::WEB_PORT_DEFAULT),"pinLength":config::PIN_LENGTH,"pollIntervalMs":4000,"offlineRetryMinMs":4000,"offlineRetryMaxMs":30000,"pairPollIntervalMs":700})
+    #[cfg(target_os = "macos")]
+    let platform_name = "macos";
+    #[cfg(target_os = "windows")]
+    let platform_name = "windows";
+    json!({"appVersion":env!("CARGO_PKG_VERSION"),"platform":platform_name,"apiPort":config::port("PC_REMOTE_API_PORT",config::API_PORT_DEFAULT),"webPort":config::port("PC_REMOTE_WEB_PORT",config::WEB_PORT_DEFAULT),"pinLength":config::PIN_LENGTH,"pollIntervalMs":4000,"offlineRetryMinMs":4000,"offlineRetryMaxMs":30000,"pairPollIntervalMs":700})
+}
+
+#[cfg(test)]
+mod runtime_config_tests {
+    use super::*;
+
+    #[test]
+    fn runtime_config_identifies_the_native_platform() {
+        #[cfg(target_os = "macos")]
+        assert_eq!(runtime_config()["platform"], "macos");
+        #[cfg(target_os = "windows")]
+        assert_eq!(runtime_config()["platform"], "windows");
+    }
 }
 
 fn html_escape(value: &str) -> String {

@@ -6,6 +6,7 @@
 
 - replaced the desktop Python runtime with a lightweight Rust tray and macOS menu-bar application
 - added universal macOS releases for Apple Silicon and Intel, distributed as DMG and ZIP
+- fixed macOS mute-state reporting, power-command error handling, Automation guidance, and Login Item registration on macOS 13+
 - kept the phone web controller and legacy settings/PIN migration compatible with existing installations
 - applied one serialized per-peer and process-wide PIN attempt limit across login and protected actions
 - added Windows and both macOS architectures to Rust CI and tagged release builds

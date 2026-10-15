@@ -203,11 +203,13 @@ jobs:
             <key>CFBundleVersion</key><string>${version%%-*}</string>
             <key>LSUIElement</key><true/>
             <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSAppleEventsUsageDescription</key><string>PC Remote sends commands to System Events and Music to carry out the actions you choose on your Mac.</string>
           </dict></plist>
           PLIST
           codesign --force --deep --sign - "release/macos/PC Remote.app"
           codesign --verify --deep --strict "release/macos/PC Remote.app"
           plutil -lint "release/macos/PC Remote.app/Contents/Info.plist"
+          plutil -extract NSAppleEventsUsageDescription raw "release/macos/PC Remote.app/Contents/Info.plist" >/dev/null
           lipo -info "release/macos/PC Remote.app/Contents/MacOS/PC Remote"
           "release/macos/PC Remote.app/Contents/MacOS/PC Remote" --autostart-status
           ditto -c -k --sequesterRsrc --keepParent \
@@ -262,6 +264,7 @@ jobs:
         with:
           name: PC Remote ${{ github.ref_name }}
           generate_release_notes: true
+          overwrite_files: true
           files: |
             release/windows/*.exe
             release/windows/*.zip
