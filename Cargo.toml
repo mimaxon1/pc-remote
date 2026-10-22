@@ -37,6 +37,9 @@ windows-sys = { version = "0.61", features = [
 [target.'cfg(target_os = "macos")'.dependencies]
 smappservice-rs = "0.1.3"
 
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winresource = "0.1"
+
 [profile.release]
 opt-level = "z"
 lto = true

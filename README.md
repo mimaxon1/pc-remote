@@ -30,6 +30,20 @@ PC Remote 2.0 is a lightweight, open-source Windows and macOS remote that turns 
 
 Use it from the couch, beside a TV, during a presentation, or anywhere else on the same Wi-Fi/LAN.
 
+## See the controller
+
+<p align="center"><img src="docs/media/controller-en.jpg" alt="PC Remote phone browser controller: volume, media and applications" width="340"></p>
+
+<details><summary>Watch the volume controls</summary>
+
+![PC Remote volume control demonstration](docs/media/controller-demo.gif)
+
+</details>
+
+Actual interface with sample responses; this preview does not demonstrate physical PC control.
+
+[Website and setup guide](https://mimaxon1.github.io/pc-remote/) · [Unified Remote comparison](https://mimaxon1.github.io/pc-remote/unified-remote-alternative/)
+
 ## Why PC Remote?
 
 - **No phone app required** — open the controller in any modern browser.

@@ -30,6 +30,20 @@ PC Remote 2.0 — лёгкий open-source пульт для Windows и macOS, �
 
 Подходит для дивана и ТВ, презентаций, демонстрационных ПК, стриминга, домашней сети и других сценариев в одном Wi-Fi/LAN.
 
+## Как выглядит пульт
+
+<p align="center"><img src="docs/media/controller-ru.jpg" alt="Пульт PC Remote в браузере телефона: громкость, музыка и приложения" width="340"></p>
+
+<details><summary>Посмотреть работу кнопок громкости</summary>
+
+![Демонстрация кнопок громкости PC Remote](docs/media/controller-demo.gif)
+
+</details>
+
+Настоящий интерфейс с тестовыми ответами; это не запись управления физическим компьютером.
+
+[Сайт и инструкция](https://mimaxon1.github.io/pc-remote/ru/) · [Сравнение с Unified Remote](https://mimaxon1.github.io/pc-remote/ru/unified-remote-alternative/)
+
 ## Почему PC Remote
 
 - **На телефон ничего ставить не нужно** — достаточно современного браузера.

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://mimaxon1.github.io/pc-remote/sitemap.xml

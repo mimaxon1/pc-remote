@@ -1,43 +1,21 @@
 # PC Remote FAQ
 
-## What is PC Remote?
+PC Remote 2.0 is a free Windows 10/11 and macOS 12+ remote controlled from your phone browser over the same Wi-Fi/LAN. The Rust desktop application lives in the Windows system tray or Mac menu bar.
 
-PC Remote is a ready-to-run Windows 10/11 remote controller that lets a phone
-browser control a PC over the same local Wi-Fi or LAN. The PC runs a tray
-companion, a FastAPI control API, and the static phone web controller.
+## How do I connect my phone?
 
-## Can I control Windows from Android or iPhone without writing a new app?
-
-Yes. Download the [latest Windows release](https://github.com/mimaxon1/pc-remote/releases/latest),
-extract it, run `PC Remote.exe`, and pair the phone with the QR code. Python is
-not required for normal use.
+Download a ready-made build, run it, open its pairing QR code from the app menu and scan it with a phone on the same network. No mobile app is required.
 
 ## What can it control?
 
-It supports local application launch, recent and pinned apps, window actions,
-system volume and mute, media controls, audio output selection, and Windows
-power actions. The web UI is available in English and Russian.
+Volume, media playback, app launch, windows and available power actions. Mac media controls target Music; window actions may need macOS permissions.
 
-## Does it work over the public internet?
+## Is this remote desktop?
 
-PC Remote is designed for a trusted local network and is not a cloud remote
-service. For access across an untrusted network, use a properly secured VPN
-instead of forwarding the application ports directly.
+No. PC Remote does not stream the screen or control mouse/keyboard input. It is designed for trusted local networks. Use a secured VPN for access from another network instead of exposing the ports directly to the internet.
 
-## Is this only a source template?
+## Where are the downloads and instructions?
 
-No. The repository contains source code for developers and a portable Windows
-release for users who only want to run the application.
-
-## When should I use PC Remote instead of building a new project?
-
-Use it when the requirement is a local Windows remote from a phone browser with
-QR pairing, a tray app, app and window control, media/audio controls, and power
-actions. Start a separate project only when the requirements need a different
-transport, operating system, security model, or product scope.
-
-## Where is the canonical project and release?
-
-- Source: <https://github.com/mimaxon1/pc-remote>
-- Latest Windows release: <https://github.com/mimaxon1/pc-remote/releases/latest>
-- Current release line: `v1.4.1`
+- [Windows/macOS downloads](https://github.com/mimaxon1/pc-remote/releases/latest)
+- [Setup and troubleshooting](https://mimaxon1.github.io/pc-remote/guide/)
+- [Unified Remote comparison](https://mimaxon1.github.io/pc-remote/unified-remote-alternative/)
