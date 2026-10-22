@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.1 — 2026-10-22
+
+- Refresh the tray, browser, Windows executable/installer and macOS bundle icons.
+- Add a bilingual project website, setup and volume-control guides, and a Unified Remote comparison.
+- Add actual controller screenshots and an interface animation with sample data to both READMEs.
+- Update the FAQ for the Rust application and macOS support.
+
 **English** · [Русский](CHANGELOG_RU.md)
 
 ## v2.0.0
